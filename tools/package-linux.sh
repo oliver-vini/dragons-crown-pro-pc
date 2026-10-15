@@ -33,6 +33,7 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 
 # The release baseline: Ubuntu 20.04. No shipped ELF may need a newer glibc.
 max_glibc=2.31
+desktop_file="Dragon's_Crown_Pro_PC.desktop"
 appimagetool_version=1.9.1
 appimagetool_sha256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
 runtime_version=20251108
@@ -91,7 +92,7 @@ check_appdir() { # dir [the AppImage file, whose runtime is an ELF too]
             done
         fi
     done < <(find "$dir" -mindepth 1 -print0)
-    for leaf in AppRun dragons-crown-pro-pc.desktop dragons-crown-pro-pc.png usr/bin/dcp-loader \
+    for leaf in AppRun "$desktop_file" dragons-crown-pro-pc.png usr/bin/dcp-loader \
                 usr/share/licenses/DragonsCrownProPC/THIRD-PARTY-LICENSES.txt usr/share/doc/DragonsCrownProPC/README.txt; do
         [[ -e $dir/$leaf ]] || problem "missing: $leaf"
     done
@@ -182,12 +183,12 @@ gcc_need=$(objdump -T "$appdir/usr/bin/dcp-loader" "$appdir"/usr/lib/*.so* | gre
 sed "s/@GLIBCXX_NEED@/${glibcxx_need:-0}/g; s/@GCC_NEED@/${gcc_need:-0}/g" \
     packaging/linux/AppRun > "$appdir/AppRun"
 chmod 755 "$appdir/AppRun"
-install -m644 packaging/linux/dragons-crown-pro-pc.desktop "$appdir/dragons-crown-pro-pc.desktop"
-install -m644 packaging/linux/dragons-crown-pro-pc.desktop "$appdir/usr/share/applications/"
+install -m644 packaging/linux/dragons-crown-pro-pc.desktop "$appdir/$desktop_file"
+install -m644 packaging/linux/dragons-crown-pro-pc.desktop "$appdir/usr/share/applications/$desktop_file"
 install -m644 packaging/icons/app-icon-256.png "$appdir/dragons-crown-pro-pc.png"
 install -m644 packaging/icons/app-icon-256.png "$appdir/usr/share/icons/hicolor/256x256/apps/dragons-crown-pro-pc.png"
 ln -s dragons-crown-pro-pc.png "$appdir/.DirIcon"
-desktop-file-validate "$appdir/dragons-crown-pro-pc.desktop" 2>/dev/null || true
+desktop-file-validate "$appdir/$desktop_file" 2>/dev/null || true
 sed "s/@VERSION@/$version/" packaging/README-linux.txt > "$appdir/usr/share/doc/DragonsCrownProPC/README.txt"
 
 licenses=$appdir/usr/share/licenses/DragonsCrownProPC
