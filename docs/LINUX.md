@@ -6,8 +6,12 @@ core. This page lists what differs from Windows, how to build and package it, an
 
 ## Building
 
-`packaging/linux/ci-deps.sh` installs the build environment on Ubuntu 24.04 (Clang 20, CMake, Ninja, the distribution's
-development packages, and Vulkan-Headers, VMA and SDL3 built into `/usr/local`). Then:
+Releases are built on Ubuntu 20.04. `packaging/linux/ci-deps.sh` prepares a clean 20.04 system as root: Clang 20 from
+apt.llvm.org and the GCC 14 C++ library from the `ubuntu-toolchain-r/test` PPA (both signing keys checked by
+fingerprint), CMake 3.31.8, and the distribution's development packages. What 20.04 lacks or ships too old is built into
+`/usr/local` from pinned commits or SHA-256-checked archives: Vulkan-Headers, VMA, glslang, Boost 1.83 headers, fmt,
+Zydis and Zycore, xxHash, robin-map, OpenSSL 3.5 (libcrypto), SDL3, Linux 6.8's `userfaultfd.h`, and the libdecor and
+PipeWire headers SDL needs to build those backends (SDL loads both at run time; they are not bundled). Then:
 
 | Command | Result |
 | --- | --- |
@@ -15,13 +19,27 @@ development packages, and Vulkan-Headers, VMA and SDL3 built into `/usr/local`).
 | `tools/build.sh --test` | also runs `dcp-launcher-tests` and `dcp-runtime-tests` |
 | `tools/build.sh --run` | starts the loader that was just built |
 | `tools/package-linux.sh` | `dist/DragonsCrownProPC-v<version>-linux-x86_64.AppImage` and `.sha256`; debug symbols in `dist/<name>-symbols/` |
-| `tools\package-release.ps1` (Windows) | the Windows ZIP and this AppImage, in one run: the AppImage is built in WSL2 (`tools/package-release-linux.sh` mirrors the sources into `~/.cache/dragons-crown-pro-pc-build`, runs `package-linux.sh` there and copies the result back) |
+| `tools\package-release.ps1` (Windows) | the Windows ZIP and this AppImage, in one run: the AppImage is built in the WSL2 distribution `DcpFocalBuild` (`tools/package-release-linux.sh` mirrors the sources into `~/.cache/dragons-crown-pro-pc-build`, runs `package-linux.sh` there and copies the result back) |
 
-The AppImage is built on Ubuntu 24.04. Its payload imports glibc 2.38 symbols at most (the loader, SDL3 and libcrypto:
-`__isoc23_*`, `strlcpy`, `fmod`), so 2.38 is the minimum, and `package-linux.sh` refuses a bundle that needs a newer one.
-The loader needs `GLIBCXX_3.4.32` and `CXXABI_1.3.13`. `.github/workflows/linux-appimage.yml` is set up to build and test
-it and to open its launcher on Debian 13, Fedora 42, Ubuntu 24.04, Arch and openSUSE; it is started by hand, publishes
-nothing and has not been run yet.
+The AppImage needs glibc 2.31 (Ubuntu 20.04) or newer: its newest glibc import is 2.30 (the loader's `gettid` and
+`pthread_cond_clockwait`). `package-linux.sh` refuses to package on a system with a newer glibc, and before and after
+writing the AppImage it reads the version needs of every ELF file in it (found by content, not by name) and stops if
+any needs more than 2.31, or if the package carries a part of glibc. The loader also needs `GLIBCXX_3.4.32`; older
+systems get the bundled fallback C++ library. `.github/workflows/linux-appimage.yml` builds it in an Ubuntu 20.04
+container and opens its launcher on Ubuntu 20.04, Debian 13, Fedora 42, Ubuntu 24.04, Arch and openSUSE; it is started
+by hand, publishes nothing and has not been run yet.
+
+To make the release environment in WSL2, import the Ubuntu 20.04.5 base image
+(`ubuntu-base-20.04.5-base-amd64.tar.gz` from https://cdimage.ubuntu.com/ubuntu-base/releases/20.04/release/, SHA-256
+`60e216b60947653dc8989be3821380268315b99b2959c29882781541bfe5a426`, listed in that folder's signed `SHA256SUMS`) and
+prepare it once:
+
+```powershell
+wsl --import DcpFocalBuild <folder> ubuntu-base-20.04.5-base-amd64.tar.gz --version 2
+wsl -d DcpFocalBuild -u root -- bash packaging/linux/ci-deps.sh
+```
+
+Run the second command from the repository folder. A Docker `ubuntu:20.04` container works the same way.
 
 ## What differs from Windows
 
@@ -62,8 +80,9 @@ shader cache, per-run logs, audio, reinstalling without losing user data) is the
 `usr/bin/dcp-loader` with `DT_RPATH=$ORIGIN/../lib` finds the bundled libraries (SDL3, FreeType, libpng, OpenSSL's
 libcrypto, fmt, Zydis, xxHash and their dependencies); no `LD_LIBRARY_PATH` is set, so programs the launcher starts
 (`zenity`, `xdg-open`) are not affected. glibc, the Vulkan loader and drivers, X11/Wayland and the audio libraries come
-from the system. `libstdc++` and `libgcc_s` are carried in `usr/lib/compat` and used by `AppRun` only when the system's
-are older than the build needs. The package contains no game files, no drivers and no local paths (`package-linux.sh`
+from the system. The Vulkan loader must support Vulkan 1.3: Ubuntu 20.04's own `libvulkan1` (1.2.131) does not, and
+the launcher then stops as it looks for graphics cards. `libstdc++` and `libgcc_s` are carried in `usr/lib/compat` and
+used by `AppRun` only when the system's are older than the build needs. The package contains no game files, no drivers and no local paths (`package-linux.sh`
 checks the staged folder before it writes the AppImage).
 
 ## Verified without Linux hardware
@@ -78,7 +97,8 @@ package:
 - the game running natively from the loader and from the AppImage: window, Vulkan device and swapchain, guest start-up,
   threads, audio output, keyboard input, the logo, the save-data dialog and the title menu, with save data and the shader
   cache written next to the AppImage;
-- the AppImage's libraries (`ldd`, `readelf`), contents and licences, and its launcher smoke test;
+- the AppImage's libraries (`ldd`, `readelf`), contents and licences, and its launcher smoke test, also on a clean
+  Ubuntu 20.04 with a Vulkan 1.3 loader, where the bundled fallback C++ library is used;
 - the launcher's own file chooser installing the package, Shift at start on an X11 server, and the launcher on WSLg's
   Wayland compositor.
 

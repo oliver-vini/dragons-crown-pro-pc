@@ -7,29 +7,31 @@
 #   tools/package-linux.sh --verify DIR check an existing AppDir
 #
 # Needs patchelf, binutils, curl and dpkg (Debian/Ubuntu: licence texts come from the packages of the bundled
-# libraries). Build on Ubuntu 24.04 (packaging/linux/ci-deps.sh): the glibc of the build host is the oldest one the
+# libraries). Build on Ubuntu 20.04 (packaging/linux/ci-deps.sh): the glibc of the build host is the oldest one the
 # AppImage runs on. GPU drivers, the Vulkan loader, X11/Wayland and glibc always come from the player's system.
 set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
-cd "$root"
 skip_build=0 verify_dir=
 while (($#)); do
     case $1 in
         --skip-build) skip_build=1 ;;
-        --verify) verify_dir=${2:?--verify needs a folder}; shift ;;
+        --verify) verify_dir=$(cd -- "${2:?--verify needs a folder}" && pwd) || exit 2; shift ;;
         -h|--help) sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
     shift
 done
+cd "$root"
 
 step() { printf '\n==> %s\n' "$*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-# The newest glibc symbol the payload may import: 2.38 (loader, SDL3 and libcrypto), found by symbol inspection.
-max_glibc=${DCP_MAX_GLIBC:-2.38}
+# The release baseline: Ubuntu 20.04. No shipped ELF may need a newer glibc.
+max_glibc=2.31
 appimagetool_version=1.9.1
 appimagetool_sha256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+runtime_version=20251108
+runtime_sha256=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
 
 # Libraries the player's system provides: glibc, the Vulkan loader and drivers, the display servers, audio daemons.
 excluded='^(ld-linux.*|libc|libm|libdl|librt|libpthread|libresolv|libutil|libnsl|libanl|libcrypt|libmvec|libvulkan|libGL|libGLX|libGLdispatch|libEGL|libOpenGL|libgbm|libdrm.*|libX11|libX11-xcb|libxcb.*|libXau|libXdmcp|libXext|libXfixes|libXrender|libXi|libXcursor|libXrandr|libxkbcommon.*|libwayland-.*|libasound|libudev|libpulse.*|libpipewire.*|libdbus-1|libfontconfig|libOpenCL|libva.*|libvdpau|libnvidia-.*|libcuda|libz|libselinux|libpcre2-.*|libsystemd|libcap)\.so'
@@ -38,15 +40,41 @@ compat_libs='^(libstdc\+\+|libgcc_s)\.so'
 
 forbidden_names='^(game|user|logs|cache|build|prepared|extracted|image|sce_sys|sce_module|eboot\.bin|param\.sfo|dcp\.ini|boot\.bin|content\.bin|image\.json|imports\.json|symbols)$'
 forbidden_patterns='\.(pkg|pdb|debug|log|dmp|ini|bin|self|sprx|prx|elf|cpk|sfo|json|spv|pipeline_cache|o|a|tmp|bak|sav|py|ps1|c|cpp|h)$'
+glibc_parts='^(ld-linux.*|libc|libm|libdl|libpthread|librt|libresolv|libutil|libmvec|libanl|libnsl|libBrokenLocale|libthread_db|libnss_.*)\.so'
 
-check_appdir() {
-    local dir=$1 problems=0 item rel name needles
+newer_than() { [[ $1 != "$2" && $(printf '%s\n' "$1" "$2" | sort -V | tail -1) == "$1" ]]; }
+is_elf() { [[ $(head -c 4 -- "$1" | od -An -tx1 | tr -d ' ') == 7f454c46 ]]; }
+# The GLIBC_ versions in the ELF's version-needs section: the dynamic loader refuses to start it without every one.
+newest_glibc() {
+    local needs
+    needs=$(readelf --version-info -W -- "$1") || return 1
+    awk '/^Version needs section/ {needs = 1; next} /^Version / {needs = 0} needs' <<<"$needs" |
+        { grep -oE 'Name: GLIBC_[0-9]+(\.[0-9]+)*' || true; } | sed 's/^Name: GLIBC_//' | sort -V | tail -1
+}
+# Every ELF found by content (not by name or mode) must run on the baseline glibc.
+check_glibc() { # label root files...
+    local label=$1 base=$2 file newest
+    shift 2
+    for file in "$@"; do
+        is_elf "$file" || continue
+        newest=$(newest_glibc "$file") || { problem "unreadable ELF: ${file#"$base"/}"; continue; }
+        printf '  %-40s glibc %s\n' "${file#"$base"/}" "${newest:-(none)}"
+        if [[ -n $newest ]] && newer_than "$newest" "$max_glibc"; then
+            problem "$label ${file#"$base"/} needs glibc $newest, newer than the $max_glibc baseline (build on Ubuntu 20.04)"
+        fi
+    done
+}
+
+check_appdir() { # dir [the AppImage file, whose runtime is an ELF too]
+    local dir=$1 problems=0 item rel name needles files=()
     problem() { echo "  $*" >&2; problems=$((problems + 1)); }
     needles=("$root" "${HOME:-/nonexistent-home}" VisualStudio DEBUG_SAULO gow3 'God of War' referencias-ps4)
     while IFS= read -r -d '' item; do
         rel=${item#"$dir"/}
         name=$(basename -- "$item")
         [[ $name =~ $forbidden_names ]] && problem "forbidden name: $rel"
+        [[ $name =~ $glibc_parts ]] && problem "glibc must come from the player's system: $rel"
+        [[ -f $item && ! -L $item ]] && files+=("$item")
         if [[ $rel != usr/share/licenses/* && $rel != usr/share/doc/* && -f $item && $name =~ $forbidden_patterns ]]; then
             problem "forbidden file type: $rel"
         fi
@@ -65,25 +93,25 @@ check_appdir() {
     local missing
     missing=$(env -u LD_LIBRARY_PATH ldd "$dir/usr/bin/dcp-loader" | grep 'not found' || true)
     [[ -z $missing ]] || problem "unresolved libraries: $missing"
-    local newest
-    newest=$(find "$dir" -type f \( -name '*.so*' -o -perm -u+x \) -exec objdump -T {} + 2>/dev/null |
-             grep -o 'GLIBC_2\.[0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -1 || true)
-    if [[ -n $newest && $(printf '%s\n' "$newest" "$max_glibc" | sort -V | tail -1) != "$max_glibc" ]]; then
-        problem "needs glibc $newest, newer than $max_glibc: build on Ubuntu 24.04 or set DCP_MAX_GLIBC"
-    fi
+    echo "glibc needed by each ELF (baseline $max_glibc):"
+    check_glibc 'the AppDir:' "$dir" "${files[@]}"
+    (($# < 2)) || check_glibc 'the AppImage runtime:' "$(dirname -- "$2")" "$2"
     ((problems == 0)) || die "release check failed ($problems problem(s))"
-    echo "AppDir is clean (newest glibc symbol: ${newest:-none})"
+    echo 'AppDir is clean'
 }
 
 if [[ -n $verify_dir ]]; then
-    check_appdir "$(cd -- "$verify_dir" && pwd)"
+    check_appdir "$verify_dir"
     exit 0
 fi
 
 [[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || die 'Packaging needs Linux x86_64 (Windows: tools\package.ps1).'
-for tool in patchelf objdump objcopy strip curl dpkg dpkg-query ldd sha256sum; do
+for tool in patchelf objdump objcopy readelf strip curl dpkg dpkg-query ldd sha256sum; do
     command -v "$tool" >/dev/null || die "Missing $tool"
 done
+host_glibc=$(getconf GNU_LIBC_VERSION | cut -d' ' -f2)
+newer_than "$host_glibc" "$max_glibc" &&
+    die "This system has glibc $host_glibc. Release AppImages are built on Ubuntu 20.04 (glibc $max_glibc): see packaging/linux/ci-deps.sh."
 
 version=$(sed -n 's/^set(DCP_PORT_VERSION "\([^"]*\)").*/\1/p' CMakeLists.txt)
 [[ -n $version ]] || die 'DCP_PORT_VERSION not found in CMakeLists.txt'
@@ -171,28 +199,32 @@ for component in "${!built_in[@]}"; do
     mkdir -p "$licenses/$component"
     install -m644 "${built_in[$component]}" "$licenses/$component/"
 done
-# The licence texts of the distribution packages the bundled libraries come from (and of SDL3, built from source).
+# The licence texts of the distribution packages the bundled libraries come from, or of the sources
+# packaging/linux/ci-deps.sh built them from (it installs those texts in /usr/local/share/licenses/<component>).
+declare -A source_built=([libSDL3]=SDL3 [libfmt]=fmt [libZydis]=zydis [libZycore]=zydis [libxxhash]=xxhash
+                         [libcrypto]=openssl)
 manifest=$licenses/SYSTEM-PACKAGES.txt
 {
-    echo "Libraries bundled in the AppImage, with the Ubuntu packages they come from and their licence texts."
+    echo "Libraries bundled in the AppImage, with the Ubuntu packages or sources they come from and their licence texts."
     echo "Libraries and drivers the player's system provides (glibc, Vulkan, X11/Wayland, audio) are not bundled."
 } > "$manifest"
 for lib in $(cd "$appdir/usr/lib" && ls -- *.so* compat/*.so* 2>/dev/null | sed 's|.*/||' | sort -u); do
     path=${owners[$lib]:-}
     [[ -n $path ]] || continue
-    package=$(dpkg-query -S "$(readlink -f -- "$path")" 2>/dev/null | head -1 | cut -d: -f1 || true)
+    # dpkg knows a file by one name only, which on a merged-/usr system may be either of these.
+    package=$(dpkg-query -S "$(readlink -f -- "$path")" "$path" 2>/dev/null | head -1 | cut -d: -f1 || true)
     if [[ -n $package ]]; then
         version_of=$(dpkg-query -W -f='${Version}' "$package")
         mkdir -p "$licenses/system/$package"
         install -m644 "/usr/share/doc/$package/copyright" "$licenses/system/$package/copyright"
         printf '\n%s (%s %s)\n  Licence text: licenses/system/%s/copyright\n' "$lib" "$package" "$version_of" "$package" >> "$manifest"
-    elif [[ $lib == libSDL3.so* ]]; then
-        sdl_license=$(find "$(dirname -- "$path")/.." /usr/local/share -iname 'LICENSE*' -path '*SDL3*' 2>/dev/null | head -1 || true)
-        [[ -n $sdl_license ]] || sdl_license=${SDL3_LICENSE:-}
-        [[ -f $sdl_license ]] || die 'SDL3 licence text not found (set SDL3_LICENSE=/path/to/LICENSE.txt)'
-        mkdir -p "$licenses/system/SDL3"
-        install -m644 "$sdl_license" "$licenses/system/SDL3/LICENSE.txt"
-        printf '\n%s (SDL3, built from source by packaging/linux/ci-deps.sh)\n  Licence text: licenses/system/SDL3/LICENSE.txt\n' "$lib" >> "$manifest"
+    elif component=${source_built[${lib%%.so*}]:-} && [[ -n $component && $(readlink -f -- "$path") == /usr/local/lib/* ]]; then
+        texts=(/usr/local/share/licenses/"$component"/*)
+        [[ -f ${texts[0]} ]] || die "No licence text in /usr/local/share/licenses/$component (run packaging/linux/ci-deps.sh)"
+        mkdir -p "$licenses/system/$component"
+        install -m644 "${texts[@]}" "$licenses/system/$component/"
+        printf '\n%s (%s, built from source by packaging/linux/ci-deps.sh)\n  Licence text: licenses/system/%s/\n' \
+            "$lib" "$component" "$component" >> "$manifest"
     else
         die "No package owns $path: add its licence handling to tools/package-linux.sh"
     fi
@@ -210,10 +242,25 @@ if [[ ! -x $tool ]]; then
     chmod +x "$tool.part"
     mv "$tool.part" "$tool"
 fi
-ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$dist/$name.AppImage.new" >"$work/appimagetool.log" 2>&1 ||
-    { cat "$work/appimagetool.log" >&2; die 'appimagetool failed'; }
+# appimagetool would otherwise download the unpinned "continuous" runtime.
+runtime=$work/runtime-$runtime_version-x86_64
+if [[ ! -f $runtime ]]; then
+    curl -fL --retry 3 -o "$runtime.part" \
+        "https://github.com/AppImage/type2-runtime/releases/download/$runtime_version/runtime-x86_64"
+    echo "$runtime_sha256  $runtime.part" | sha256sum -c - || die 'the AppImage runtime does not match the pinned checksum'
+    mv "$runtime.part" "$runtime"
+fi
+ARCH=x86_64 "$tool" --appimage-extract-and-run --runtime-file "$runtime" "$appdir" "$dist/$name.AppImage.new" \
+    >"$work/appimagetool.log" 2>&1 || { cat "$work/appimagetool.log" >&2; die 'appimagetool failed'; }
+chmod 755 "$dist/$name.AppImage.new"
+
+step 'Checking the contents of the written AppImage'
+rm -rf "$work/written"
+mkdir -p "$work/written"
+(cd "$work/written" && "$dist/$name.AppImage.new" --appimage-extract >/dev/null)
+check_appdir "$work/written/squashfs-root" "$dist/$name.AppImage.new"
+rm -rf "$work/written"
 mv -f "$dist/$name.AppImage.new" "$dist/$name.AppImage"
-chmod 755 "$dist/$name.AppImage"
 (cd "$dist" && sha256sum "$name.AppImage" > "$name.AppImage.sha256")
 
 printf '\nAPPIMAGE READY (nothing was published)\n'

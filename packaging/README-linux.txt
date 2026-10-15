@@ -24,9 +24,10 @@ A package still encrypted for a PS4 console cannot be unpacked on a PC.
 
 REQUIREMENTS
 ------------
-- 64-bit Linux (x86-64) with glibc 2.38 or later and the Vulkan loader
-  (libvulkan.so.1). So far it has only been run on Ubuntu 24.04; other
-  distributions that are new enough may work
+- 64-bit Linux (x86-64) with glibc 2.31 or later and a Vulkan loader for
+  Vulkan 1.3 (libvulkan.so.1; Ubuntu 20.04's own is too old). So far the
+  game has only been run on Ubuntu 24.04; other distributions that are new
+  enough may work
 - A graphics card and Mesa or proprietary driver with Vulkan 1.3,
   VK_EXT_robustness2, VK_KHR_push_descriptor and
   VK_EXT_vertex_attribute_divisor (AMD RADV on the Steam Deck qualifies)

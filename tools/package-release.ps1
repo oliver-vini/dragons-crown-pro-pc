@@ -8,23 +8,22 @@
   release counts as prepared only when both artifacts exist and their .sha256 files match. The version is
   DCP_PORT_VERSION in CMakeLists.txt, the only place it is written.
 
-  The Linux side needs WSL2 with the build environment prepared once by packaging/linux/ci-deps.sh (Ubuntu 24.04).
-  Nothing is installed or changed in WSL.
+  The Linux side needs the WSL2 distribution DcpFocalBuild: Ubuntu 20.04, the AppImage's glibc baseline, prepared once
+  by packaging/linux/ci-deps.sh (docs/LINUX.md). Nothing is installed or changed in WSL.
 .PARAMETER Clean
   Clean build for both platforms.
 .PARAMETER SkipBuild
   Package the existing builds of both platforms.
 .PARAMETER WslDistro
-  The WSL distribution to build in; the default distribution when omitted.
+  The WSL distribution to build in.
 .EXAMPLE
   .\tools\package-release.ps1
-  .\tools\package-release.ps1 -WslDistro Ubuntu-24.04
 #>
 [CmdletBinding()]
 param(
     [switch]$Clean,
     [switch]$SkipBuild,
-    [string]$WslDistro
+    [string]$WslDistro = 'DcpFocalBuild'
 )
 
 . (Join-Path $PSScriptRoot '_common.ps1')
@@ -88,16 +87,15 @@ foreach ($problem in $windowsProblems) { $notes.Add("Windows: $problem") }
 # Linux x86_64 through WSL
 Write-Step 'Linux x86_64 AppImage (tools\package-release-linux.sh in WSL)'
 Remove-Artifacts $linuxFiles
-$wslArgs = @()
-if ($WslDistro) { $wslArgs += @('-d', $WslDistro) }
+$wslArgs = @('-d', $WslDistro)
 $wsl = Get-Command wsl.exe -ErrorAction SilentlyContinue
 $linuxProblems = @()
 if (-not $wsl) {
-    $linuxProblems += 'wsl.exe was not found. The AppImage is built in WSL2: install WSL2 with an Ubuntu 24.04 distribution, then run packaging/linux/ci-deps.sh in it once.'
+    $linuxProblems += 'wsl.exe was not found. The AppImage is built in WSL2, in an Ubuntu 20.04 distribution prepared as docs/LINUX.md describes.'
 } else {
     $probe = & wsl.exe @wslArgs --exec /bin/uname -sm 2>&1
     if ($LASTEXITCODE -ne 0 -or "$probe" -notmatch 'Linux x86_64') {
-        $linuxProblems += "WSL is not usable ($(("$probe" -replace '\0', '').Trim())). Install WSL2 with an Ubuntu 24.04 distribution, or name one with -WslDistro."
+        $linuxProblems += "WSL distribution $WslDistro is not usable ($(("$probe" -replace '\0', '').Trim())). Create it as docs/LINUX.md describes, or name another Ubuntu 20.04 one with -WslDistro."
     } else {
         $repoWsl = (& wsl.exe @wslArgs --exec /usr/bin/wslpath -a -u $root | Out-String).Trim()
         if ($LASTEXITCODE -ne 0 -or -not $repoWsl) {
@@ -108,7 +106,7 @@ if (-not $wsl) {
             if ($SkipBuild) { $linuxArgs += '--skip-build' }
             & wsl.exe @wslArgs --exec /bin/bash "$repoWsl/tools/package-release-linux.sh" @linuxArgs
             if ($LASTEXITCODE -ne 0) {
-                $linuxProblems += "tools/package-release-linux.sh failed (exit $LASTEXITCODE). If it listed missing tools, prepare WSL once with: wsl$(if ($WslDistro) { " -d $WslDistro" }) --exec /bin/bash $repoWsl/packaging/linux/ci-deps.sh"
+                $linuxProblems += "tools/package-release-linux.sh failed (exit $LASTEXITCODE). If it listed missing tools, prepare WSL once with: wsl -d $WslDistro -u root --exec /bin/bash $repoWsl/packaging/linux/ci-deps.sh"
             } else {
                 $linuxProblems = @(Test-Artifacts $linuxFiles)
             }

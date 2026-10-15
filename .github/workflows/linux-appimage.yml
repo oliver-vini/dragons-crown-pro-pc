@@ -1,6 +1,6 @@
-# Linux AppImage, built on Ubuntu 24.04; its payload needs glibc 2.38 or newer (SteamOS, Bazzite/Fedora, Debian 13,
-# Ubuntu 24.04+), then opened on those distributions. Run by hand (Actions > Linux AppImage > Run workflow): the
-# AppImage is kept as a workflow artifact; nothing is published, tagged or released.
+# Linux AppImage, built in an Ubuntu 20.04 container (its payload needs glibc 2.31 or newer), then opened on Ubuntu
+# 20.04 and on current distributions. Run by hand (Actions > Linux AppImage > Run workflow): the AppImage is kept as a
+# workflow artifact; nothing is published, tagged or released.
 name: Linux AppImage
 
 on:
@@ -16,6 +16,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    container: ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +41,7 @@ jobs:
       fail-fast: false
       matrix:
         # debian:13 has SteamOS 3.7's glibc (2.41), fedora:42 is Bazzite's base.
-        image: ['debian:13', 'fedora:42', 'ubuntu:24.04', 'archlinux:latest', 'opensuse/tumbleweed:latest']
+        image: ['ubuntu:20.04', 'debian:13', 'fedora:42', 'ubuntu:24.04', 'archlinux:latest', 'opensuse/tumbleweed:latest']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4

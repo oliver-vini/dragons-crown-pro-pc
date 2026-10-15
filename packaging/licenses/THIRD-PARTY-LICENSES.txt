@@ -82,17 +82,19 @@ Shared libraries inside the Linux AppImage (usr/lib)
 SDL3                        Zlib                                       licenses/system/SDL3
 FreeType                    FTL (FreeType licence; offered as FTL or GPL-2.0-or-later)
 libpng                      libpng licence
-Zydis, Zycore               MIT
-xxHash                      BSD-2-Clause
-fmt                         MIT
-OpenSSL (libcrypto 3)       Apache-2.0                                 (game installer: hashes and package decryption)
+Zydis, Zycore               MIT                                        licenses/system/zydis
+xxHash                      BSD-2-Clause                               licenses/system/xxhash
+fmt                         MIT                                        licenses/system/fmt
+OpenSSL (libcrypto 3)       Apache-2.0                                 licenses/system/openssl (game installer: hashes
+                                                                        and package decryption)
 Brotli                      MIT
 bzip2                       bzip2 licence
 libstdc++, libgcc_s         GPL-3.0-or-later WITH GCC-exception-3.1    (fallback copies in usr/lib/compat, used only
                                                                         when the system's are older)
 
-The licence text of each Ubuntu package is in licenses/system/<package>/copyright; licenses/SYSTEM-PACKAGES.txt lists
-every library with its package and version. glibc, the Vulkan loader, the graphics drivers, X11/Wayland and the
+The libraries with a licence path above are built from pinned sources by packaging/linux/ci-deps.sh; the licence text
+of each Ubuntu package is in licenses/system/<package>/copyright. licenses/SYSTEM-PACKAGES.txt lists every library
+with where it comes from. glibc, the Vulkan loader, the graphics drivers, X11/Wayland and the
 audio libraries come from the player's system and are not part of the AppImage.
 
 

@@ -7,7 +7,7 @@
 #   tools/build.sh --test     also build and run the focused launcher and runtime tests
 #   tools/build.sh --run [args...]   start the loader that was just built (arguments after --run go to it)
 #
-# Missing tools or libraries are listed; packaging/linux/ci-deps.sh installs them on Ubuntu 24.04.
+# Missing tools or libraries are listed; packaging/linux/ci-deps.sh installs them on Ubuntu 20.04 (the release baseline).
 set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 build_dir=$root/build/cmake/linux
@@ -43,7 +43,7 @@ if command -v pkg-config >/dev/null; then
 fi
 if ((${#missing[@]})); then
     echo "Missing: ${missing[*]}" >&2
-    echo 'On Ubuntu 24.04 packaging/linux/ci-deps.sh installs everything (and builds SDL3, Vulkan headers and VMA).' >&2
+    echo 'packaging/linux/ci-deps.sh prepares the Ubuntu 20.04 release build environment (docs/LINUX.md).' >&2
     exit 1
 fi
 

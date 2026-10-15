@@ -12,6 +12,8 @@ target_include_directories(trg_core PUBLIC ${TRG_DIR}/include)
 target_compile_definitions(trg_core PRIVATE _CRT_SECURE_NO_WARNINGS)
 if (WIN32)
     target_link_libraries(trg_core PRIVATE shell32 ole32 comdlg32)
+else()
+    target_link_libraries(trg_core PRIVATE Threads::Threads)
 endif()
 
 # The launcher draws with the Dear ImGui compiled into the video core library.

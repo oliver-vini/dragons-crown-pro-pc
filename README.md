@@ -32,7 +32,7 @@
 ## What you need
 
 - Windows 10 (version 1903 or newer) or Windows 11, 64-bit
-- **Or, experimental:** 64-bit Linux on x86-64, including the Steam Deck, with glibc 2.38 or newer and `libvulkan.so.1` on the system (see [Linux and Steam Deck](#linux-and-steam-deck)). It has been run on Ubuntu 24.04 only; other distributions that are new enough may work
+- **Or, experimental:** 64-bit Linux on x86-64, including the Steam Deck, with glibc 2.31 or newer and a Vulkan 1.3 loader (`libvulkan.so.1`) on the system (see [Linux and Steam Deck](#linux-and-steam-deck)). The game has been run on Ubuntu 24.04 only and its launcher started on Ubuntu 20.04; other distributions that are new enough may work
 - A graphics card and driver with **Vulkan 1.3**, `VK_EXT_robustness2`, `VK_KHR_push_descriptor` and `VK_EXT_vertex_attribute_divisor` on either platform (tested on an NVIDIA GeForce RTX 4070 and Intel UHD Graphics 730 on Windows)
 - **Your own legally obtained Dragon's Crown Pro package**: a decrypted PS4 `.pkg` file of this exact game version, and about 6 GB of free space for the installed game:
 
@@ -169,7 +169,7 @@ git clone https://github.com/saulob/dragons-crown-pro-pc.git
 2. `.\tools\build.ps1` fetches the pinned dependencies (TRG Launcher, Dear ImGui and a few small libraries) and builds `build\cmake\clang64\bin\dcp-loader.exe`.
 3. `.\tools\build.ps1 -Run` also starts it. Install the game from the launcher's Play page, as in a release; the development build keeps it in `game\` and the boot image in `build\image\` of the repository.
 4. `.\tools\package.ps1` makes the release folder, ZIP and `.zip.sha256` file in `dist\` from the same build: the program without debug information (the symbols stay in `dist\`), the DLLs it needs and the licences. It is local only and never uploads, tags or publishes anything. The release version is `DCP_PORT_VERSION` in `CMakeLists.txt`.
-5. `.\tools\package-release.ps1` prepares the whole release in `dist\`: that Windows ZIP, and the Linux AppImage built in WSL2 (`tools/package-release-linux.sh`, which runs `tools/package-linux.sh`), each with its `.sha256` file. It needs WSL2 with the Linux build environment prepared once (`packaging/linux/ci-deps.sh`), installs nothing, fails if either platform fails, and never uploads anything.
+5. `.\tools\package-release.ps1` prepares the whole release in `dist\`: that Windows ZIP, and the Linux AppImage built in WSL2 (`tools/package-release-linux.sh`, which runs `tools/package-linux.sh`), each with its `.sha256` file. It needs the Ubuntu 20.04 WSL2 distribution `DcpFocalBuild`, prepared once as [docs/LINUX.md](docs/LINUX.md#building) describes, installs nothing, fails if either platform fails, and never uploads anything.
 
 `.\tools\test.ps1` runs the focused tests. Python is not needed to build, test or play. Only the optional development scripts in `scripts\` use it, such as the Python cross-checks of the package extractor and the boot image builder (`.\tools\setup.ps1 -InstallPython`).
 
@@ -178,13 +178,13 @@ git clone https://github.com/saulob/dragons-crown-pro-pc.git
 ```sh
 git clone https://github.com/saulob/dragons-crown-pro-pc.git
 cd dragons-crown-pro-pc
-bash packaging/linux/ci-deps.sh   # Ubuntu 24.04: toolchain, libraries, Vulkan headers, VMA and SDL3 (uses sudo)
+sudo bash packaging/linux/ci-deps.sh   # Ubuntu 20.04: toolchain and pinned libraries (docs/LINUX.md)
 bash tools/build.sh               # fetches the pinned dependencies, builds build/cmake/linux/bin/dcp-loader
 bash tools/build.sh --test        # also builds and runs the focused launcher and runtime tests
 bash tools/package-linux.sh       # dist/DragonsCrownProPC-v<version>-linux-x86_64.AppImage and its .sha256
 ```
 
-`tools/build.sh --run` starts the loader that was built. Python is not needed. The AppImage is built on Ubuntu 24.04, whose glibc is the oldest one it runs on; `.github/workflows/linux-appimage.yml` does the same in GitHub Actions (started by hand, publishes nothing).
+`tools/build.sh --run` starts the loader that was built. Python is not needed. The AppImage is built on Ubuntu 20.04, whose glibc (2.31) is the oldest one it runs on, and `tools/package-linux.sh` checks every ELF file in it against that; `.github/workflows/linux-appimage.yml` does the same in GitHub Actions (started by hand, publishes nothing).
 
 The technical notes are in [docs](docs): [launcher and settings](docs/LAUNCHER.md), [Linux port](docs/LINUX.md), [graphics](docs/GRAPHICS.md), [first boot](docs/FIRST_BOOT.md), [bootstrap](docs/BOOTSTRAP.md) and [references](docs/REFERENCES.md).
 
