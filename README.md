@@ -2,7 +2,7 @@
 
 # Dragon's Crown Pro - PC Port
 
-### Dragon's Crown Pro running natively on Windows, and experimentally on Linux and Steam Deck, through a PS4-to-PC port and runtime, with the TRG launcher and modern graphics and display options
+### Dragon's Crown Pro, Vanillaware's PS4 side-scrolling beat 'em up, running natively on Windows, and experimentally on Linux and Steam Deck, with the TRG launcher and modern graphics and display options
 
 [![Latest release](https://img.shields.io/github/v/release/saulob/dragons-crown-pro-pc?style=for-the-badge&label=release&color=e0bb32&labelColor=07101f&include_prereleases&cacheSeconds=300)](https://github.com/saulob/dragons-crown-pro-pc/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/saulob/dragons-crown-pro-pc/total?style=for-the-badge&color=e0bb32&labelColor=07101f&cacheSeconds=300)](https://github.com/saulob/dragons-crown-pro-pc/releases)
@@ -32,7 +32,7 @@
 ## What you need
 
 - Windows 10 (version 1903 or newer) or Windows 11, 64-bit
-- **Or, experimental:** 64-bit Linux on x86-64, including the Steam Deck, with glibc 2.31 or newer and a Vulkan 1.3 loader (`libvulkan.so.1`) on the system (see [Linux and Steam Deck](#linux-and-steam-deck)). The game has been run on Ubuntu 24.04 only and its launcher started on Ubuntu 20.04; other distributions that are new enough may work
+- **Or, experimental:** 64-bit Linux on x86-64, including the Steam Deck, on an X11 or Wayland desktop, with glibc 2.31 or newer and a Vulkan 1.3 loader (`libvulkan.so.1`) and graphics driver (see [Linux and Steam Deck](#linux-and-steam-deck)). The game has been run on Ubuntu 24.04 only and its launcher started on Ubuntu 20.04; other distributions that are new enough may work
 - A graphics card and driver with **Vulkan 1.3**, `VK_EXT_robustness2`, `VK_KHR_push_descriptor` and `VK_EXT_vertex_attribute_divisor` on either platform (tested on an NVIDIA GeForce RTX 4070 and Intel UHD Graphics 730 on Windows)
 - **Your own legally obtained Dragon's Crown Pro package**: a decrypted PS4 `.pkg` file of this exact game version, and about 6 GB of free space for the installed game:
 
@@ -52,7 +52,7 @@ The Linux package is the same game and launcher, so the package requirements are
 
 ## Installing
 
-1. Download **DragonsCrownProPC-v0.1.0-windows-x64.zip** from the [latest release](https://github.com/saulob/dragons-crown-pro-pc/releases/latest) and extract it anywhere you can write to.
+1. Download **DragonsCrownProPC-v0.2.0-windows-x64.zip** from the [latest release](https://github.com/saulob/dragons-crown-pro-pc/releases/latest) and extract it anywhere you can write to.
 2. Run **dcp-loader.exe**. The launcher opens.
 3. On the **Play** page click **Install game...** and select your own Dragon's Crown Pro `.pkg` file.
 4. Wait until **Ready to play** appears. The package is unpacked on your PC into the `game` folder next to the program (about 6 GB). The `.pkg` file is only read, and you can delete it afterwards.
