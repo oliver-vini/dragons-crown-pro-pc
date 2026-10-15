@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Packages the tested Linux build as dist/DragonsCrownProPC-v<version>-linux-x86_64.AppImage (and its .sha256). Local
+# Packages the tested Linux build as dist/DragonsCrownProPC-v<version>-x86_64.AppImage (and its .sha256). Local
 # only: nothing is published, tagged or uploaded. The Linux counterpart of tools/package.ps1.
 #
 #   tools/package-linux.sh              build with tools/build.sh, then package
 #   tools/package-linux.sh --skip-build package the existing build/cmake/linux/bin/dcp-loader
+#   tools/package-linux.sh --out-dir DIR  write the AppImage, .sha256 and symbols to DIR instead of dist/
 #   tools/package-linux.sh --verify DIR check an existing AppDir
 #
 # Needs patchelf, binutils, curl and dpkg (Debian/Ubuntu: licence texts come from the packages of the bundled
@@ -11,16 +12,20 @@
 # AppImage runs on. GPU drivers, the Vulkan loader, X11/Wayland and glibc always come from the player's system.
 set -euo pipefail
 root=$(cd -- "$(dirname -- "$0")/.." && pwd)
-skip_build=0 verify_dir=
+skip_build=0 verify_dir= out_dir=
 while (($#)); do
     case $1 in
         --skip-build) skip_build=1 ;;
+        --out-dir) out_dir=${2:?--out-dir needs a folder}; shift ;;
         --verify) verify_dir=$(cd -- "${2:?--verify needs a folder}" && pwd) || exit 2; shift ;;
-        -h|--help) sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 2 ;;
     esac
     shift
 done
+if [[ -n $out_dir ]]; then
+    mkdir -p -- "$out_dir" && out_dir=$(cd -- "$out_dir" && pwd) || exit 2
+fi
 cd "$root"
 
 step() { printf '\n==> %s\n' "$*"; }
@@ -115,9 +120,9 @@ newer_than "$host_glibc" "$max_glibc" &&
 
 version=$(sed -n 's/^set(DCP_PORT_VERSION "\([^"]*\)").*/\1/p' CMakeLists.txt)
 [[ -n $version ]] || die 'DCP_PORT_VERSION not found in CMakeLists.txt'
-name=DragonsCrownProPC-v$version-linux-x86_64
+name=DragonsCrownProPC-v$version-x86_64
 loader=$root/build/cmake/linux/bin/dcp-loader
-dist=$root/dist
+dist=${out_dir:-$root/dist}
 work=$root/build/appimage
 appdir=$work/AppDir
 symbols=$dist/$name-symbols

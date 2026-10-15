@@ -34,7 +34,7 @@ if ($cmake -notmatch '(?m)^set\(DCP_PORT_VERSION "([^"]+)"\)') { Stop-Tool 'DCP_
 $version = $Matches[1]
 $dist = Join-Path $root 'dist'
 $windowsName = "DragonsCrownProPC-v$version-windows-x64"
-$linuxName = "DragonsCrownProPC-v$version-linux-x86_64"
+$linuxName = "DragonsCrownProPC-v$version-x86_64"
 $windowsFiles = @("$windowsName.zip", "$windowsName.zip.sha256")
 $linuxFiles = @("$linuxName.AppImage", "$linuxName.AppImage.sha256")
 

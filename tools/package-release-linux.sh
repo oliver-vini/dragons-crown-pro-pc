@@ -48,7 +48,7 @@ bash tools/package-linux.sh "${args[@]}"
 step "Copying the AppImage into $source/dist"
 mkdir -p "$source/dist"
 shopt -s nullglob
-images=(dist/DragonsCrownProPC-v*-linux-x86_64.AppImage)
+images=(dist/DragonsCrownProPC-v*-x86_64.AppImage)
 ((${#images[@]} == 1)) || die "Expected one AppImage in $mirror/dist, found ${#images[@]}"
 name=$(basename -- "${images[0]}" .AppImage)
 rm -rf "$source/dist/$name.AppImage" "$source/dist/$name.AppImage.sha256" "$source/dist/$name-symbols"

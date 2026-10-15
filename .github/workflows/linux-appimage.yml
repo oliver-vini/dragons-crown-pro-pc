@@ -30,8 +30,8 @@ jobs:
         with:
           name: dragons-crown-pro-pc-linux-x86_64
           path: |
-            dist/DragonsCrownProPC-*-linux-x86_64.AppImage
-            dist/DragonsCrownProPC-*-linux-x86_64.AppImage.sha256
+            dist/DragonsCrownProPC-*-x86_64.AppImage
+            dist/DragonsCrownProPC-*-x86_64.AppImage.sha256
           if-no-files-found: error
 
   smoke:
@@ -51,4 +51,4 @@ jobs:
       - name: Open the launcher on ${{ matrix.image }}
         run: |
           chmod +x dist/*.AppImage
-          docker run --rm -v "$PWD:/w:ro" "${{ matrix.image }}" bash -c 'bash /w/packaging/linux/smoke-test.sh /w/dist/DragonsCrownProPC-*-linux-x86_64.AppImage'
+          docker run --rm -v "$PWD:/w:ro" "${{ matrix.image }}" bash -c 'bash /w/packaging/linux/smoke-test.sh /w/dist/DragonsCrownProPC-*-x86_64.AppImage'

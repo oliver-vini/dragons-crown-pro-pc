@@ -80,12 +80,12 @@ These folders are created the first time they are needed and are not part of the
 
 **Experimental.** This is a native Linux build, not Proton or Wine, and it is intended to provide the same functionality as Windows: the same launcher, installer, display and graphics options, controls and in-game menu. "Experimental" is about testing: the maintainer has not been able to test it on a real Linux PC or Steam Deck yet. It was validated automatically under WSL2 with Ubuntu 24.04, in X11 and Wayland environments with a software Vulkan driver: the launcher, installing a package, the game's first screens, saves and the shader cache. Broader testing is still needed on AMD (RADV), NVIDIA and Intel Vulkan drivers, the Steam Deck's own controls, gamescope and Gaming Mode, performance, and long sessions. Please report Linux-specific problems with the log (see [Reporting problems](#reporting-problems)).
 
-1. Download **DragonsCrownProPC-v&lt;version&gt;-linux-x86_64.AppImage** from the [latest release](https://github.com/saulob/dragons-crown-pro-pc/releases/latest) and make it executable (right-click > **Properties** > **Permissions** > **Is executable**, or `chmod +x`).
+1. Download **DragonsCrownProPC-v&lt;version&gt;-x86_64.AppImage** from the [latest release](https://github.com/saulob/dragons-crown-pro-pc/releases/latest) and make it executable (right-click > **Properties** > **Permissions** > **Is executable**, or `chmod +x`).
 2. Run it. The launcher opens.
 3. On the **Play** page click **Install game...** and select your own Dragon's Crown Pro `.pkg` file, exactly as on Windows. The launcher uses the desktop's file chooser (`zenity` or `kdialog`) when there is one, and its own file chooser otherwise, which works with the mouse, the keyboard and a controller. Wait until **Ready to play** appears, then press **PLAY**.
 4. `game`, `user` and `logs` are kept next to the AppImage file when that folder is writable (in `$XDG_DATA_HOME/DragonsCrownProPC` otherwise; `DCP_PORTABLE_DIR` chooses another folder). The AppImage itself is never written to.
 
-An AppImage needs FUSE 2 to start. On a system without a working FUSE, run it as `./DragonsCrownProPC-*-linux-x86_64.AppImage --appimage-extract-and-run`.
+An AppImage needs FUSE 2 to start. On a system without a working FUSE, run it as `./DragonsCrownProPC-*-x86_64.AppImage --appimage-extract-and-run`.
 
 To bring the launcher back after turning **Show this launcher** off, hold **Shift** while starting (in an X11 session) or start the AppImage with `--launcher`. The AppImage's desktop entry also has a **Show launcher** action. On a Steam Deck, which has no keyboard in Gaming Mode, put `--launcher` in the shortcut's **Launch Options** for a run, then remove it.
 
@@ -181,7 +181,7 @@ cd dragons-crown-pro-pc
 sudo bash packaging/linux/ci-deps.sh   # Ubuntu 20.04: toolchain and pinned libraries (docs/LINUX.md)
 bash tools/build.sh               # fetches the pinned dependencies, builds build/cmake/linux/bin/dcp-loader
 bash tools/build.sh --test        # also builds and runs the focused launcher and runtime tests
-bash tools/package-linux.sh       # dist/DragonsCrownProPC-v<version>-linux-x86_64.AppImage and its .sha256
+bash tools/package-linux.sh       # dist/DragonsCrownProPC-v<version>-x86_64.AppImage and its .sha256 (--out-dir DIR: elsewhere)
 ```
 
 `tools/build.sh --run` starts the loader that was built. Python is not needed. The AppImage is built on Ubuntu 20.04, whose glibc (2.31) is the oldest one it runs on, and `tools/package-linux.sh` checks every ELF file in it against that; `.github/workflows/linux-appimage.yml` does the same in GitHub Actions (started by hand, publishes nothing).

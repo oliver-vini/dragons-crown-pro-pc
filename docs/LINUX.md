@@ -18,7 +18,7 @@ PipeWire headers SDL needs to build those backends (SDL loads both at run time; 
 | `tools/build.sh` | fetches `gpu/deps.txt`, builds `build/cmake/linux/bin/dcp-loader` |
 | `tools/build.sh --test` | also runs `dcp-launcher-tests` and `dcp-runtime-tests` |
 | `tools/build.sh --run` | starts the loader that was just built |
-| `tools/package-linux.sh` | `dist/DragonsCrownProPC-v<version>-linux-x86_64.AppImage` and `.sha256`; debug symbols in `dist/<name>-symbols/` |
+| `tools/package-linux.sh` | `dist/DragonsCrownProPC-v<version>-x86_64.AppImage` and `.sha256`; debug symbols in `dist/<name>-symbols/` (`--out-dir DIR` writes all three to DIR instead) |
 | `tools\package-release.ps1` (Windows) | the Windows ZIP and this AppImage, in one run: the AppImage is built in the WSL2 distribution `DcpFocalBuild` (`tools/package-release-linux.sh` mirrors the sources into `~/.cache/dragons-crown-pro-pc-build`, runs `package-linux.sh` there and copies the result back) |
 
 The AppImage needs glibc 2.31 (Ubuntu 20.04) or newer: its newest glibc import is 2.30 (the loader's `gettid` and

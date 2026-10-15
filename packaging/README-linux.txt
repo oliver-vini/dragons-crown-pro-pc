@@ -45,7 +45,7 @@ INSTALL
 1. Put the AppImage in a folder you can write to (it keeps its game files,
    saves and logs beside itself) and make it executable:
 
-     chmod +x DragonsCrownProPC-v@VERSION@-linux-x86_64.AppImage
+     chmod +x DragonsCrownProPC-v@VERSION@-x86_64.AppImage
 
 2. Run it (double-click, or from a terminal). The launcher opens.
 3. On the Play page, click "Install game..." and select your .pkg file. The
