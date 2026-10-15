@@ -398,6 +398,9 @@ int main(int argc, char **argv) {
     static char settings_file[4200];
     snprintf(settings_file,sizeof(settings_file),"%s/dcp.ini",user_dir);
     if (!cpu_only && !check_imports) {
+#ifndef _WIN32
+        if (!dcp_check_vulkan()) exit(1);
+#endif
         DcpLauncherConfig launcher={app0,paths.image_dir,user_dir,settings_file,paths.logs_dir,skip_launcher,force_launcher};
         if (dcp_launcher_run(&launcher)==DCP_LAUNCHER_QUIT) exit(0);
     }

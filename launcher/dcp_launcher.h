@@ -47,6 +47,10 @@ int dcp_render_resolution(const char *settings_file);
  * only, no device is created. */
 int dcp_gpu_names(char (*names)[256], int max);
 
+/* 1 when Vulkan can run the renderer. Otherwise logs why, shows it in an error window until the player closes it (on
+ * stderr only without a display) and returns 0. */
+int dcp_check_vulkan(void);
+
 /* Builds boot.bin, content.bin and image.json in `out` from the prepared game folder `app0` (UTF-8 paths). 0 on
  * success; otherwise 1 and the reason in `error`. */
 int dcp_build_boot_image(const char *app0, const char *out, char *error, size_t error_size);
