@@ -8,7 +8,7 @@
 #include <optional>
 #include <string>
 
-#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_error.h>
 #include <SDL3/SDL_messagebox.h>
 #include <fmt/format.h>
 #ifdef __linux__
@@ -103,12 +103,9 @@ extern "C" int dcp_check_vulkan(void) {
     }
     const std::string text = "Dragon's Crown Pro PC could not start the graphics system.\n\n" + problem->cause +
                              "\n\n" + problem->advice;
-    // SDL's X11 message box needs the video subsystem.
-    if (!SDL_Init(SDL_INIT_VIDEO) ||
-        !SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Dragon's Crown Pro PC", text.c_str(), nullptr)) {
+    if (!SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Dragon's Crown Pro PC", text.c_str(), nullptr)) {
         std::fprintf(stderr, "Graphics: could not show the error window: %s\n", SDL_GetError());
     }
-    SDL_Quit();
     return 0;
 }
 

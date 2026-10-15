@@ -26,8 +26,8 @@ The AppImage needs glibc 2.31 (Ubuntu 20.04) or newer: its newest glibc import i
 writing the AppImage it reads the version needs of every ELF file in it (found by content, not by name) and stops if
 any needs more than 2.31, or if the package carries a part of glibc. The loader also needs `GLIBCXX_3.4.32`; older
 systems get the bundled fallback C++ library. `.github/workflows/linux-appimage.yml` builds it in an Ubuntu 20.04
-container and opens its launcher on Ubuntu 20.04, Debian 13, Fedora 42, Ubuntu 24.04, Arch and openSUSE; it is started
-by hand, publishes nothing and has not been run yet.
+container and opens its launcher on Debian 13, Fedora 42, Ubuntu 24.04, Arch and openSUSE, whose stock Vulkan loaders
+support 1.3 (20.04's does not); it is started by hand, publishes nothing and has not been run yet.
 
 To make the release environment in WSL2, import the Ubuntu 20.04.5 base image
 (`ubuntu-base-20.04.5-base-amd64.tar.gz` from https://cdimage.ubuntu.com/ubuntu-base/releases/20.04/release/, SHA-256
