@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Unpacks a PS4 fake package (fPKG) into a game folder: shadPS4's PKG extractor (src/core/file_format/pkg.cpp,
-// pfs.h, pkg_type.cpp and src/core/crypto, removed upstream in "code: Remove fpkg code"), with Windows CNG in place of
+// pfs.h, pkg_type.cpp and src/core/crypto, removed upstream in "code: Remove fpkg code"), with crypto.h (CNG or OpenSSL) in place of
 // Crypto++. scripts/pkg_extract.py follows the same code and writes the same files.
 #pragma once
 

@@ -1,19 +1,12 @@
 #include "game_files.h"
 
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <bcrypt.h>
-
 #include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <system_error>
 #include <vector>
+
+#include "crypto.h"
 
 namespace dcp {
 namespace {
@@ -127,28 +120,20 @@ std::string Sha256Hex(const std::filesystem::path& file) {
     if (!in) {
         return {};
     }
-    BCRYPT_ALG_HANDLE algorithm = nullptr;
-    BCRYPT_HASH_HANDLE hash = nullptr;
+    crypto::Sha256Stream stream;
+    std::vector<char> block(1u << 20);
+    bool ok = true;
+    while (ok && in.read(block.data(), static_cast<std::streamsize>(block.size())).gcount() > 0) {
+        ok = stream.Update(block.data(), static_cast<size_t>(in.gcount()));
+    }
+    uint8_t digest[32];
     std::string hex;
-    if (BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0))) {
-        if (BCRYPT_SUCCESS(BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0))) {
-            std::vector<char> block(1u << 20);
-            bool ok = true;
-            while (ok && in.read(block.data(), static_cast<std::streamsize>(block.size())).gcount() > 0) {
-                ok = BCRYPT_SUCCESS(BCryptHashData(hash, reinterpret_cast<PUCHAR>(block.data()),
-                                                   static_cast<ULONG>(in.gcount()), 0));
-            }
-            unsigned char digest[32];
-            if (ok && in.eof() && BCRYPT_SUCCESS(BCryptFinishHash(hash, digest, sizeof(digest), 0))) {
-                static const char digits[] = "0123456789abcdef";
-                for (const unsigned char byte : digest) {
-                    hex += digits[byte >> 4];
-                    hex += digits[byte & 15];
-                }
-            }
-            BCryptDestroyHash(hash);
+    if (ok && in.eof() && stream.Finish(digest)) {
+        static const char digits[] = "0123456789abcdef";
+        for (const uint8_t byte : digest) {
+            hex += digits[byte >> 4];
+            hex += digits[byte & 15];
         }
-        BCryptCloseAlgorithmProvider(algorithm, 0);
     }
     return hex;
 }

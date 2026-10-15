@@ -102,10 +102,15 @@ target_compile_definitions(dcpgpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG IMGUI_IMP
     DCP_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf")
 set_source_files_properties(shim/dcp_overlay.cpp PROPERTIES
     OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf)
-# NOMINMAX/WIN32_LEAN_AND_MEAN keep <windows.h> out of the way of std::min/max and the Vulkan/SDL headers.
-target_compile_definitions(dcpgpu PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
-target_compile_options(dcpgpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers
-    -include ${CMAKE_CURRENT_SOURCE_DIR}/shim/dcp_win_compat.h)
+target_compile_options(dcpgpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
 target_link_libraries(dcpgpu PUBLIC Vulkan::Headers Vulkan::Vulkan fmt::fmt Boost::headers magic_enum tsl::robin_map
-    VulkanMemoryAllocator PkgConfig::XXHASH SDL3::SDL3 PNG::PNG miniz Zydis::Zydis sirit
-    ws2_32 bcrypt ntdll synchronization winmm)
+    VulkanMemoryAllocator PkgConfig::XXHASH SDL3::SDL3 PNG::PNG miniz Zydis::Zydis sirit)
+if (WIN32)
+    # NOMINMAX/WIN32_LEAN_AND_MEAN keep <windows.h> out of the way of std::min/max and the Vulkan/SDL headers.
+    target_compile_definitions(dcpgpu PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_options(dcpgpu PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/shim/dcp_win_compat.h)
+    target_link_libraries(dcpgpu PUBLIC ws2_32 bcrypt ntdll synchronization winmm)
+else()
+    find_package(Threads REQUIRED)
+    target_link_libraries(dcpgpu PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+endif()

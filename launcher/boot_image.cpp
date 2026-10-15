@@ -1,14 +1,5 @@
 #include "boot_image.h"
 
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <bcrypt.h>
-
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -20,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "crypto.h"
 #include "dcp_launcher.h"
 #include "game_files.h"
 #include "game_profile.h"
@@ -103,13 +95,7 @@ std::string Nid(const std::string& name) {
     Bytes input(name.begin(), name.end());
     input.insert(input.end(), std::begin(kNidSalt), std::end(kNidSalt));
     uint8_t digest[20] = {};
-    BCRYPT_ALG_HANDLE algorithm = nullptr;
-    if (!BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA1_ALGORITHM, nullptr, 0))) {
-        Fail("SHA-1 is unavailable");
-    }
-    const NTSTATUS status = BCryptHash(algorithm, nullptr, 0, input.data(), ULONG(input.size()), digest, 20);
-    BCryptCloseAlgorithmProvider(algorithm, 0);
-    if (!BCRYPT_SUCCESS(status)) {
+    if (!crypto::Sha1(input.data(), input.size(), digest)) {
         Fail("SHA-1 failed");
     }
     uint8_t reversed[8];

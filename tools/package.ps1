@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Packages the tested build as dist\DragonsCrownProPC-v<version>-windows-x64 (folder, ZIP and .sha256). Local only:
+  Packages the tested build as dist\DragonsCrownProPC-v<version>-windows-x64 (folder, ZIP and .zip.sha256). Local only:
   nothing is published, tagged or uploaded.
 .DESCRIPTION
   Builds with tools\build.ps1 (the one RelWithDebInfo configuration) unless -SkipBuild, then stages dcp-loader.exe
@@ -196,7 +196,7 @@ $dist = Join-Path $root 'dist'
 $stage = Join-Path $dist $name
 $symbols = Join-Path $dist "$name-symbols"
 $zip = Join-Path $dist "$name.zip"
-$shaFile = Join-Path $dist "$name.sha256"
+$shaFile = Join-Path $dist "$name.zip.sha256"
 
 Write-Step "Dragon's Crown Pro PC $version - Windows release package (local only)"
 if (-not $SkipBuild) {
@@ -210,7 +210,7 @@ $built = (Get-Item -LiteralPath $loader).VersionInfo.ProductVersion
 if ($built -ne $version) { Stop-Tool "dcp-loader.exe is version $built, CMakeLists.txt says $version (run without -SkipBuild)" }
 
 New-Item -ItemType Directory -Force $dist | Out-Null
-foreach ($old in @($stage, $symbols, $zip, $shaFile)) {
+foreach ($old in @($stage, $symbols, $zip, $shaFile, (Join-Path $dist "$name.sha256"))) {
     if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force }
 }
 $licenses = Join-Path $stage 'licenses'

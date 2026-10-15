@@ -1,0 +1,53 @@
+# Linux AppImage, built on Ubuntu 24.04; its payload needs glibc 2.38 or newer (SteamOS, Bazzite/Fedora, Debian 13,
+# Ubuntu 24.04+), then opened on those distributions. Run by hand (Actions > Linux AppImage > Run workflow): the
+# AppImage is kept as a workflow artifact; nothing is published, tagged or released.
+name: Linux AppImage
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-appimage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: bash packaging/linux/ci-deps.sh
+      - name: Build and test
+        run: bash tools/build.sh --test
+      - name: AppImage
+        run: bash tools/package-linux.sh --skip-build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dragons-crown-pro-pc-linux-x86_64
+          path: |
+            dist/DragonsCrownProPC-*-linux-x86_64.AppImage
+            dist/DragonsCrownProPC-*-linux-x86_64.AppImage.sha256
+          if-no-files-found: error
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # debian:13 has SteamOS 3.7's glibc (2.41), fedora:42 is Bazzite's base.
+        image: ['debian:13', 'fedora:42', 'ubuntu:24.04', 'archlinux:latest', 'opensuse/tumbleweed:latest']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dragons-crown-pro-pc-linux-x86_64
+          path: dist
+      - name: Open the launcher on ${{ matrix.image }}
+        run: |
+          chmod +x dist/*.AppImage
+          docker run --rm -v "$PWD:/w:ro" "${{ matrix.image }}" bash -c 'bash /w/packaging/linux/smoke-test.sh /w/dist/DragonsCrownProPC-*-linux-x86_64.AppImage'

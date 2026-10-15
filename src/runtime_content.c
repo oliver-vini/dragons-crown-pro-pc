@@ -4,7 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <sys/statvfs.h>
+#include <unistd.h>
+#endif
 #define INVALID_ID ((int32_t)0x805a1000)
 #define NOT_LOADED ((int32_t)0x805a1001)
 #define PARAMETER ((int32_t)0x80d90002)
@@ -90,10 +95,16 @@ static ABI int32_t addon_list(uint32_t service,void *list,uint32_t capacity,uint
 /* /download0 lives in the user directory: report the host's free space there. */
 static ABI int32_t download_space_kb(const char *mount_point,uint64_t *kb) {
     require_initialized();
-    ULARGE_INTEGER free_bytes;
     if (!mount_point || !kb) return PARAMETER;
+#ifdef _WIN32
+    ULARGE_INTEGER free_bytes;
     if (!GetDiskFreeSpaceExA(runtime_file_user_dir(),&free_bytes,NULL,NULL)) free_bytes.QuadPart=0;
-    *kb=free_bytes.QuadPart/1024; return 0;
+    *kb=free_bytes.QuadPart/1024;
+#else
+    struct statvfs space;
+    *kb=statvfs(runtime_file_user_dir(),&space) ? 0 : (uint64_t)space.f_bavail*space.f_frsize/1024;
+#endif
+    return 0;
 }
 static ABI int32_t addon_mount(uint32_t service,const void *label,void *mount_point) {
     require_initialized();

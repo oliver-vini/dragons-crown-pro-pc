@@ -245,6 +245,7 @@ static int pool(void) {
 /* Direct memory occupies [0,POOL_SIZE) of the memfd, flexible memory [POOL_SIZE,+FLEX_SPAN). */
 static int pool(void) {
     if (pool_fd>=0) return 0;
+    runtime_memory_reserve();
     pool_fd=memfd_create("dcp-guest-memory", MFD_CLOEXEC);
     if (pool_fd<0 || ftruncate(pool_fd,(off_t)(POOL_SIZE+FLEX_SPAN))) return -1;
     void *view=mmap(NULL,POOL_SIZE+FLEX_SPAN,PROT_READ|PROT_WRITE,MAP_SHARED|MAP_NORESERVE,pool_fd,0);
@@ -252,15 +253,34 @@ static int pool(void) {
     backing_base=view;
     return 0;
 }
-void runtime_memory_reserve(void) {}
+/* The whole PS4 user range is claimed up front, so a host allocation can never land inside it;
+ * every later guest mapping replaces part of this reservation (MAP_FIXED stays inside it). */
+void runtime_memory_reserve(void) {
+    static int reserved;
+    if (reserved) return;
+    void *base=mmap((void *)USER_MIN,USER_MAX-USER_MIN,PROT_NONE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_FIXED_NOREPLACE,-1,0);
+    if (base!=(void *)USER_MIN) {
+        fprintf(stderr,"STOP: cannot reserve the PS4 address range %p-%p (%s)\n",(void *)USER_MIN,(void *)USER_MAX,
+                base==MAP_FAILED ? strerror(errno) : "the kernel placed it elsewhere");
+        exit(21);
+    }
+    reserved=1;
+}
+static int in_user_range(uintptr_t address, uint64_t size) {
+    return address>=USER_MIN && address<USER_MAX && size<=USER_MAX-address;
+}
 static int host_map(uintptr_t address, uint64_t size, int prot, int reserved, uint64_t phys) {
+    if (!in_user_range(address,size)) return -1;
     void *mapped = !reserved
         ? mmap((void *)address,size,prot,MAP_SHARED|MAP_FIXED,pool_fd,(off_t)phys)
         : mmap((void *)address,size,PROT_NONE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|MAP_FIXED,-1,0);
+    if (mapped==MAP_FAILED) fprintf(stderr,"Runtime: host mapping of %p (+0x%" PRIx64 ") failed: %s\n",(void *)address,size,strerror(errno));
     return mapped==MAP_FAILED ? -1 : 0;
 }
-static int host_unmap(uintptr_t address, uint64_t size) { return munmap((void *)address,size); }
-static int host_protect(uintptr_t address, uint64_t size, int prot) { return mprotect((void *)address,size,prot); }
+static int host_unmap(uintptr_t address, uint64_t size) { return host_map(address,size,PROT_NONE,1,0); }
+static int host_protect(uintptr_t address, uint64_t size, int prot) {
+    return in_user_range(address,size) ? mprotect((void *)address,size,prot) : -1;
+}
 static void host_discard(uint64_t phys, uint64_t size) {
     fallocate(pool_fd,FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,(off_t)phys,(off_t)size);
 }
@@ -811,6 +831,7 @@ void *runtime_low_map(size_t size, int prot) {
     void *p=MAP_FAILED;
     while (low_next+size<=USER_MIN) {
         p=mmap((void *)low_next,size,prot,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
+        if (p!=MAP_FAILED && p!=(void *)low_next) { munmap(p,size); p=MAP_FAILED; } /* kernel without MAP_FIXED_NOREPLACE */
         low_next+=size+PAGE; /* unmapped gap catches overruns */
         if (p!=MAP_FAILED) break;
     }
@@ -818,6 +839,41 @@ void *runtime_low_map(size_t size, int prot) {
     return p==MAP_FAILED ? NULL : p;
 #endif
 }
+#ifndef _WIN32
+/* Thread and fiber stacks are never unmapped, which would give the address back to nothing but this allocator;
+ * released ones wait here by size, with their pages returned to the kernel. */
+typedef struct IdleStack { size_t size; struct IdleStack *next; } IdleStack;
+static pthread_mutex_t stacks_lock=PTHREAD_MUTEX_INITIALIZER;
+static IdleStack *idle_stacks;
+#define STACK_GUARD ((size_t)16384)
+void *runtime_stack_acquire(size_t size) {
+    size=align_up(size,PAGE);
+    pthread_mutex_lock(&stacks_lock);
+    for (IdleStack **at=&idle_stacks;*at;at=&(*at)->next)
+        if ((*at)->size==size) {
+            char *stack=(char *)*at-STACK_GUARD;
+            *at=(*at)->next;
+            pthread_mutex_unlock(&stacks_lock);
+            return stack;
+        }
+    pthread_mutex_unlock(&stacks_lock);
+    void *stack=runtime_low_map(size,PROT_READ|PROT_WRITE);
+    if (stack && mprotect(stack,STACK_GUARD,PROT_NONE)) return NULL;
+    return stack;
+}
+/* The caller's thread must have stopped running on the stack. */
+void runtime_stack_release(void *stack,size_t size) {
+    size=align_up(size,PAGE);
+    char *usable=(char *)stack+STACK_GUARD;
+    madvise(usable,size-STACK_GUARD,MADV_DONTNEED);
+    IdleStack *idle=(IdleStack *)usable;
+    idle->size=size;
+    pthread_mutex_lock(&stacks_lock);
+    idle->next=idle_stacks;
+    idle_stacks=idle;
+    pthread_mutex_unlock(&stacks_lock);
+}
+#endif
 /* ---- GPU library interface (the video core registers its page hooks here) ---- */
 /* Video core optimizations switched off for diagnostics (gpu/shim/dcp_toggles.h); 0: all on. */
 uint64_t runtime_disabled_optimizations;

@@ -243,6 +243,7 @@ static void fault(int sig, siginfo_t *info, void *context) {
             snprintf(line, sizeof(line), "  #%d %p\n", i, frames[i]);
         ssize_t written_=write(2, line, strlen(line)); (void)written_;
     }
+    runtime_log_flush();
     _exit(128 + sig);
 }
 #endif
@@ -290,6 +291,7 @@ static void watchdog(int sig, siginfo_t *info, void *context) {
             at+=d->reclen;
         }
     usleep(100000);
+    runtime_log_flush();
     _exit(128 + sig);
 }
 #endif
@@ -322,6 +324,18 @@ static int mapped(Segment *segments, uint64_t count, uint64_t address, uint64_t 
             address - segments[i].address <= segments[i].size - bytes) return 1;
     return 0;
 }
+static const char *command_line(int argc, char **argv) {
+#ifdef _WIN32
+    (void)argc; (void)argv;
+    return GetCommandLineA();
+#else
+    static char line[4096];
+    size_t used=0;
+    for (int i=0;i<argc && used<sizeof(line)-1;++i)
+        used+=(size_t)snprintf(line+used,sizeof(line)-used,"%s%s",i ? " " : "",argv[i]);
+    return line;
+#endif
+}
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
     /* tools\build.ps1: the launcher's boot image builder on a prepared game folder, without starting anything. */
@@ -340,15 +354,15 @@ int main(int argc, char **argv) {
     mallopt(M_ARENA_MAX,1);
     mallopt(M_MMAP_THRESHOLD,32*1024*1024);
 #endif
-#ifdef _WIN32
-    /* The PS4 user range must stay free of host allocations (GPU driver, heaps), and the guest
-     * TCB needs one of the 64 TEB TLS slots before DLLs (Vulkan drivers) take them. */
+    /* The PS4 user range must stay free of host allocations (GPU driver, heaps). */
     runtime_memory_reserve();
+#ifdef _WIN32
+    /* The guest TCB needs one of the 64 TEB TLS slots before DLLs (Vulkan drivers) take them. */
     runtime_thread_tcb_offset();
 #endif
     int cpu_only = 0, strict_imports = 0, check_imports = 0;
-    unsigned timeout_seconds = 10;
-    int skip_launcher = 0;
+    unsigned timeout_seconds = 0;
+    int skip_launcher = 0, force_launcher = 0;
     const char *boot=NULL, *content_profile=NULL, *app0=NULL, *user_dir=NULL, *logs_dir=NULL, *log_file=NULL;
     int first_option = 1;
     if (argc > 1 && strncmp(argv[1], "--", 2)) { boot = argv[1]; first_option = 2; }
@@ -362,9 +376,10 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--logs") && i+1<argc) logs_dir=argv[++i];
         else if (!strcmp(argv[i], "--log") && i+1<argc) log_file=argv[++i];
         else if (!strcmp(argv[i], "--dcp-skip-launcher")) skip_launcher = 1;
+        else if (!strcmp(argv[i], "--launcher")) force_launcher = 1;
         else if (!strcmp(argv[i], "--timeout") && i+1<argc) timeout_seconds=(unsigned)strtoul(argv[++i],NULL,10);
         else {
-            fprintf(stderr, "Unknown option: %s\nUsage: %s [boot.bin] [--cpu-only] [--strict-imports] [--check-imports] [--content-profile file] [--app0 dir] [--user dir] [--logs dir] [--log file] [--dcp-skip-launcher] [--timeout seconds]\n", argv[i], argv[0]);
+            fprintf(stderr, "Unknown option: %s\nUsage: %s [boot.bin] [--cpu-only] [--strict-imports] [--check-imports] [--content-profile file] [--app0 dir] [--user dir] [--logs dir] [--log file] [--dcp-skip-launcher] [--launcher] [--timeout seconds]\n", argv[i], argv[0]);
             return 1;
         }
     }
@@ -372,20 +387,18 @@ int main(int argc, char **argv) {
     const DcpPathRequest request={boot,content_profile,app0,user_dir,logs_dir};
     if (!dcp_resolve_paths(&request,&paths)) fail("cannot locate the game folders");
     boot=paths.boot; content_profile=paths.content_profile; app0=paths.app0; user_dir=paths.user_dir;
-#ifdef _WIN32
     char log_path[4200];
     if (runtime_log_start(paths.logs_dir,log_file,log_path,sizeof(log_path))) {
         time_t now=time(NULL);
         char stamp[32];
         strftime(stamp,sizeof(stamp),"%Y-%m-%dT%H:%M:%S",localtime(&now));
-        printf("[run] %s\n[run] %s\n[run] log %s\n[run] prepared root %s\n",stamp,GetCommandLineA(),log_path,app0);
+        printf("[run] %s\n[run] %s\n[run] log %s\n[run] prepared root %s\n",stamp,command_line(argc,argv),log_path,app0);
         atexit(runtime_log_flush);
     } else fprintf(stderr,"Cannot create the log %s\n",log_file ? log_file : paths.logs_dir);
-#endif
     static char settings_file[4200];
     snprintf(settings_file,sizeof(settings_file),"%s/dcp.ini",user_dir);
     if (!cpu_only && !check_imports) {
-        DcpLauncherConfig launcher={app0,paths.image_dir,user_dir,settings_file,paths.logs_dir,skip_launcher};
+        DcpLauncherConfig launcher={app0,paths.image_dir,user_dir,settings_file,paths.logs_dir,skip_launcher,force_launcher};
         if (dcp_launcher_run(&launcher)==DCP_LAUNCHER_QUIT) exit(0);
     }
     render_resolution=&dcp_resolutions[dcp_render_resolution(settings_file)];

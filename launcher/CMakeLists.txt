@@ -10,7 +10,9 @@ set(IMGUI_DIR ${PROJECT_SOURCE_DIR}/gpu/third_party/imgui)
 add_library(trg_core STATIC ${TRG_DIR}/src/settings.cpp ${TRG_DIR}/src/platform.cpp)
 target_include_directories(trg_core PUBLIC ${TRG_DIR}/include)
 target_compile_definitions(trg_core PRIVATE _CRT_SECURE_NO_WARNINGS)
-target_link_libraries(trg_core PRIVATE shell32 ole32 comdlg32)
+if (WIN32)
+    target_link_libraries(trg_core PRIVATE shell32 ole32 comdlg32)
+endif()
 
 # The launcher draws with the Dear ImGui compiled into the video core library.
 add_library(trg_launcher STATIC ${TRG_DIR}/src/launcher.cpp ${TRG_DIR}/src/headers.cpp)
@@ -28,14 +30,25 @@ target_link_libraries(dcp_imgui_sdl PUBLIC SDL3::SDL3)
 # Game files (check, PKG unpacking, install, boot image), the settings file and the Display options: no window needed (tests link
 # only this).
 find_package(ZLIB REQUIRED)
-add_library(dcp_launcher_core STATIC boot_image.cpp game_files.cpp game_install.cpp options.cpp paths.cpp
+add_library(dcp_launcher_core STATIC boot_image.cpp file_browser.cpp game_files.cpp game_install.cpp options.cpp paths.cpp
     pkg_extract.cpp resolution.c settings.cpp)
 target_include_directories(dcp_launcher_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/src)
-target_link_libraries(dcp_launcher_core PUBLIC trg_core SDL3::SDL3 PRIVATE bcrypt ZLIB::ZLIB)
+target_link_libraries(dcp_launcher_core PUBLIC trg_core SDL3::SDL3 PRIVATE ZLIB::ZLIB)
+# Hashes and ciphers: CNG on Windows, OpenSSL's libcrypto elsewhere.
+if (WIN32)
+    target_sources(dcp_launcher_core PRIVATE crypto_win.cpp)
+    target_link_libraries(dcp_launcher_core PRIVATE bcrypt)
+    set(DCP_LOG_SOURCE ${PROJECT_SOURCE_DIR}/src/runtime_log.c)
+else()
+    find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+    target_sources(dcp_launcher_core PRIVATE crypto_openssl.cpp)
+    target_link_libraries(dcp_launcher_core PRIVATE OpenSSL::Crypto)
+    set(DCP_LOG_SOURCE ${PROJECT_SOURCE_DIR}/src/runtime_log_posix.c)
+endif()
 
-add_library(dcp_launcher STATIC host.cpp launcher.cpp)
+add_library(dcp_launcher STATIC host.cpp launcher.cpp package_browser.cpp shift_key.cpp)
 target_compile_definitions(dcp_launcher PRIVATE DCP_PORT_VERSION="${DCP_PORT_VERSION}")
-target_link_libraries(dcp_launcher PUBLIC dcp_launcher_core trg_launcher dcp_imgui_sdl)
+target_link_libraries(dcp_launcher PUBLIC dcp_launcher_core trg_launcher dcp_imgui_sdl ${CMAKE_DL_LIBS})
 
 set_target_properties(dcp_launcher_core dcp_launcher PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 target_compile_options(dcp_launcher_core PRIVATE -Wall -Wextra)
@@ -48,7 +61,7 @@ set_target_properties(dcp-launcher-shots PROPERTIES CXX_STANDARD 20 CXX_STANDARD
 
 # Focused tests with synthetic data and temporary folders (tools\test.ps1); not part of the default build.
 find_package(PNG REQUIRED)
-add_executable(dcp-launcher-tests EXCLUDE_FROM_ALL ../tests/launcher_tests.cpp ../src/runtime_log.c
+add_executable(dcp-launcher-tests EXCLUDE_FROM_ALL ../tests/launcher_tests.cpp ${DCP_LOG_SOURCE}
     ../gpu/shim/dcp_settings.cpp ../gpu/shim/dcp_png.cpp)
 target_compile_definitions(dcp-launcher-tests PRIVATE DCP_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 target_link_libraries(dcp-launcher-tests PRIVATE dcp_launcher_core PNG::PNG)

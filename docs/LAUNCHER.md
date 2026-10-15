@@ -51,9 +51,9 @@ existing file) in the folder above, and echoes it to the console. `--logs <folde
 | Missing, different version or unreadable | any | the launcher opens |
 | Valid | On | the launcher opens, then PLAY starts the game |
 | Valid | Off | the game starts directly |
-| Any | any, with Shift held | the launcher opens |
+| Any | any, with Shift held or `--launcher` | the launcher opens |
 
-`--dcp-skip-launcher` skips it once for valid game files (automated runs: `tools\build.ps1 -Run -TimeoutSeconds N` adds
+On Linux Shift is read from the X11 server; in a Wayland session start with `--launcher` instead (see [Linux port](LINUX.md)). `--dcp-skip-launcher` skips it once for valid game files (automated runs: `tools\build.ps1 -Run -TimeoutSeconds N` adds
 it). `--check-imports` and `--cpu-only` never open it. The launcher is the only recovery path, so it cannot be hidden
 while the game files are not valid. If its window cannot be opened, the game starts when the files are valid.
 

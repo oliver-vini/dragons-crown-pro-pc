@@ -50,6 +50,10 @@ typedef struct GuestThread {
     dcp_jmp_buf exit_jump; /* no SEH unwinding through guest frames */
 #else
     jmp_buf exit_jump;
+    void *stack;
+    size_t stack_size;
+    int queued;
+    struct GuestThread *next_to_reap;
 #endif
     struct GuestThread *next;
 } GuestThread;
@@ -62,6 +66,29 @@ static _Thread_local int32_t guest_errno;
 static const unsigned char *tls_template;
 static uint64_t tls_filesz, tls_memsz, tls_align=16;
 static size_t created, joined_count, exited;
+#ifndef _WIN32
+/* Detached threads whose stacks can be reused once they have exited; the host threads stay joinable for that. */
+static GuestThread *to_reap;
+static void queue_for_reap_locked(GuestThread *t) {
+    if (!t->detached || !t->finished || t->queued) return;
+    t->queued=1; t->next_to_reap=to_reap; to_reap=t;
+}
+static void release_stack(GuestThread *t) {
+    runtime_stack_release(t->stack,t->stack_size);
+    t->stack=NULL;
+}
+static void reap_detached(void) {
+    pthread_mutex_lock(&lock);
+    GuestThread *list=to_reap;
+    to_reap=NULL;
+    pthread_mutex_unlock(&lock);
+    for (GuestThread *t=list,*next;t;t=next) {
+        next=t->next_to_reap;
+        pthread_join(t->host,NULL);
+        release_stack(t);
+    }
+}
+#endif
 
 void runtime_set_main_tls(const void *data,uint64_t filesz,uint64_t memsz,uint64_t align) {
     tls_template=data; tls_filesz=filesz; tls_memsz=memsz; tls_align=align ? align : 16;
@@ -276,7 +303,11 @@ static void *host_start(void *p) {
     set_host_name(t->name);
     if (!exit_setjmp(t)) t->result=t->entry(t->argument);
     runtime_thread_keys_cleanup();
-    pthread_mutex_lock(&lock); t->finished=1; ++exited; pthread_mutex_unlock(&lock);
+    pthread_mutex_lock(&lock); t->finished=1; ++exited;
+#ifndef _WIN32
+    queue_for_reap_locked(t);
+#endif
+    pthread_mutex_unlock(&lock);
     return t->result;
 }
 static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,void *argument,const char *name) {
@@ -298,8 +329,10 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
      * guest code has no stack probes and would step over the guard page. */
     pthread_attr_setstacksize(&host,stack_bytes);
 #else
-    void *stack_memory=runtime_low_map(stack_bytes,PROT_READ|PROT_WRITE);
-    if (stack_memory) pthread_attr_setstack(&host,stack_memory,stack_bytes);
+    reap_detached();
+    stack_bytes=(stack_bytes+16383)&~(size_t)16383;
+    t->stack=runtime_stack_acquire(stack_bytes);
+    if (t->stack) { t->stack_size=stack_bytes; pthread_attr_setstack(&host,t->stack,stack_bytes); }
     else pthread_attr_setstacksize(&host,stack_bytes);
 #endif
     publish(t);
@@ -308,7 +341,9 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     int e=pthread_create(&t->host,&host,host_start,t);
     pthread_attr_destroy(&host);
     if (e) { fprintf(stderr,"STOP: host pthread_create failed: %d\n",e); exit(21); }
+#ifdef _WIN32
     if (t->detached) pthread_detach(t->host);
+#endif
     pthread_mutex_lock(&lock); ++created; pthread_mutex_unlock(&lock);
     printf("Runtime: guest thread '%s' created (stack=%llu, prio=%d)\n",t->name,(unsigned long long)stack,t->attr.prio);
     return 0;
@@ -325,14 +360,26 @@ static ABI int32_t thread_join(GuestThread *t,void **result) {
     int e=pthread_join(t->host,&value);
     if (e) { fprintf(stderr,"STOP: host pthread_join failed: %d\n",e); exit(21); }
     if (result) *result=t->result;
+#ifndef _WIN32
+    if (t->stack) release_stack(t);
+#endif
     pthread_mutex_lock(&lock); ++joined_count; pthread_mutex_unlock(&lock);
     return 0;
 }
 static ABI int32_t thread_detach(GuestThread *t) {
     if (!find_thread(t)) return ERR(3);
     if (t->detached) return ERR(22);
+#ifdef _WIN32
     t->detached=1;
     if (!t->host_owned) pthread_detach(t->host);
+#else
+    /* A joined host thread must not reach the reaper, which joins it again. */
+    if (t->joined) return ERR(22);
+    pthread_mutex_lock(&lock);
+    t->detached=1;
+    queue_for_reap_locked(t);
+    pthread_mutex_unlock(&lock);
+#endif
     return 0;
 }
 static ABI int32_t thread_cancel(GuestThread *t) {

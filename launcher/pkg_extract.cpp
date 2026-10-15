@@ -3,14 +3,6 @@
 // Adapted from shadPS4 d339b3f7 (the parent of be22674f, which removed it); see pkg_extract.h.
 #include "pkg_extract.h"
 
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <bcrypt.h>
 #include <zlib.h>
 
 #include <algorithm>
@@ -19,6 +11,7 @@
 #include <fstream>
 #include <vector>
 
+#include "crypto.h"
 #include "utf8.h"
 
 namespace dcp {
@@ -245,73 +238,32 @@ bool IsSafeName(const std::string& name) {
     });
 }
 
-class AesKey {
-public:
-    AesKey() = default;
-    AesKey(const AesKey&) = delete;
-    AesKey& operator=(const AesKey&) = delete;
-    ~AesKey() {
-        if (handle_) {
-            BCryptDestroyKey(handle_);
-        }
-    }
-    bool Init(BCRYPT_ALG_HANDLE algorithm, const uint8_t* key) {
-        return BCRYPT_SUCCESS(
-            BCryptGenerateSymmetricKey(algorithm, &handle_, nullptr, 0, const_cast<PUCHAR>(key), 16, 0));
-    }
-    BCRYPT_KEY_HANDLE get() const { return handle_; }
-
-private:
-    BCRYPT_KEY_HANDLE handle_ = nullptr;
-};
+using crypto::AesKey;
+using crypto::AesMode;
 
 // RSAES-PKCS1-v1_5 with a 2048-bit private key; the message starts with the 32-byte key it carries.
 bool RsaDecrypt(const RsaKeyset& keyset, const uint8_t* cipher, std::array<uint8_t, 32>& out) {
-    static constexpr uint8_t kPublicExponent[] = {0x01, 0x00, 0x01};
-    Bytes blob(sizeof(BCRYPT_RSAKEY_BLOB) + sizeof(kPublicExponent) + 256 + 128 + 128);
-    auto* header = reinterpret_cast<BCRYPT_RSAKEY_BLOB*>(blob.data());
-    header->Magic = BCRYPT_RSAPRIVATE_MAGIC;
-    header->BitLength = 2048;
-    header->cbPublicExp = sizeof(kPublicExponent);
-    header->cbModulus = 256;
-    header->cbPrime1 = header->cbPrime2 = 128;
-    uint8_t* at = blob.data() + sizeof(BCRYPT_RSAKEY_BLOB);
-    at = std::copy_n(kPublicExponent, sizeof(kPublicExponent), at);
-    at = std::copy_n(keyset.modulus, 256, at);
-    at = std::copy_n(keyset.prime1, 128, at);
-    std::copy_n(keyset.prime2, 128, at);
-
-    BCRYPT_KEY_HANDLE key = nullptr;
-    if (!BCRYPT_SUCCESS(BCryptImportKeyPair(BCRYPT_RSA_ALG_HANDLE, nullptr, BCRYPT_RSAPRIVATE_BLOB, &key, blob.data(),
-                                            ULONG(blob.size()), 0))) {
+    Bytes plain;
+    if (!crypto::RsaDecryptPkcs1(keyset.modulus, keyset.prime1, keyset.prime2, cipher, plain) || plain.size() < out.size()) {
         return false;
     }
-    uint8_t plain[256];
-    ULONG length = 0;
-    const NTSTATUS status = BCryptDecrypt(key, const_cast<PUCHAR>(cipher), 256, nullptr, nullptr, 0, plain,
-                                          sizeof(plain), &length, BCRYPT_PAD_PKCS1);
-    BCryptDestroyKey(key);
-    if (!BCRYPT_SUCCESS(status) || length < out.size()) {
-        return false;
-    }
-    std::copy_n(plain, out.size(), out.begin());
+    std::copy_n(plain.begin(), out.size(), out.begin());
     return true;
 }
 
 // AES-128-CBC with the IV and key from SHA-256(entry || dk3), in place. A partial last block stays as it is.
 bool DecryptWithIvKey(const uint8_t (&ivkey)[32], uint8_t* data, size_t size) {
-    const ULONG whole = ULONG(size & ~size_t(15));
+    const size_t whole = size & ~size_t(15);
     if (whole == 0) {
         return true;
     }
     AesKey key;
-    if (!key.Init(BCRYPT_AES_CBC_ALG_HANDLE, ivkey + 16)) {
+    if (!key.Init(AesMode::kCbc, ivkey + 16)) {
         return false;
     }
     uint8_t iv[16];
     std::memcpy(iv, ivkey, sizeof(iv));
-    ULONG length = 0;
-    return BCRYPT_SUCCESS(BCryptDecrypt(key.get(), data, whole, nullptr, iv, sizeof(iv), data, whole, &length, 0));
+    return key.Decrypt(data, whole, iv);
 }
 
 bool WriteWholeFile(const fs::path& path, const uint8_t* data, size_t size) {
@@ -361,7 +313,7 @@ struct Package::Impl {
         uint8_t input[64];
         std::memcpy(input, entry.raw, 32);
         std::memcpy(input + 32, dk3.data(), 32);
-        return BCRYPT_SUCCESS(BCryptHash(BCRYPT_SHA256_ALG_HANDLE, nullptr, 0, input, sizeof(input), ivkey, 32));
+        return crypto::Sha256(input, sizeof(input), ivkey);
     }
 
     // The outer PFS image: AES-XTS over 0x1000-byte sectors numbered from the start of the image (decryptPFS), with
@@ -383,9 +335,7 @@ struct Package::Impl {
             const uint64_t sector = start / kXtsSector + s;
             std::memcpy(&tweaks[s * 16], &sector, sizeof(sector));
         }
-        ULONG done = 0;
-        if (!BCRYPT_SUCCESS(BCryptEncrypt(tweak_key.get(), tweaks.data(), ULONG(tweaks.size()), nullptr, nullptr, 0,
-                                          tweaks.data(), ULONG(tweaks.size()), &done, 0))) {
+        if (!tweak_key.Encrypt(tweaks.data(), tweaks.size())) {
             return nullptr;
         }
         for (size_t s = 0; s < sectors; ++s) {
@@ -404,8 +354,7 @@ struct Package::Impl {
         for (size_t i = 0; i < length; ++i) {
             buffer[i] ^= mask[i];
         }
-        if (!BCRYPT_SUCCESS(BCryptDecrypt(data_key.get(), buffer.data(), ULONG(length), nullptr, nullptr, 0,
-                                          buffer.data(), ULONG(length), &done, 0))) {
+        if (!data_key.Decrypt(buffer.data(), length)) {
             return nullptr;
         }
         for (size_t i = 0; i < length; ++i) {
@@ -578,10 +527,8 @@ PackageResult Package::LoadFiles() {
     if (!p.ReadAt(p.pfs_offset + 0x370, input + 4, 16)) {
         return Fail(PackageResult::kReadFailed, "cannot read the PFS seed");
     }
-    if (!BCRYPT_SUCCESS(BCryptHash(BCRYPT_HMAC_SHA256_ALG_HANDLE, p.ekpfs.data(), ULONG(p.ekpfs.size()), input,
-                                   sizeof(input), digest, sizeof(digest))) ||
-        !p.tweak_key.Init(BCRYPT_AES_ECB_ALG_HANDLE, digest) ||
-        !p.data_key.Init(BCRYPT_AES_ECB_ALG_HANDLE, digest + 16)) {
+    if (!crypto::HmacSha256(p.ekpfs.data(), p.ekpfs.size(), input, sizeof(input), digest) ||
+        !p.tweak_key.Init(AesMode::kEcb, digest) || !p.data_key.Init(AesMode::kEcb, digest + 16)) {
         return Fail(PackageResult::kUnsupported, "cannot create the PFS keys");
     }
 

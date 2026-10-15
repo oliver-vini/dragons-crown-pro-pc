@@ -31,7 +31,7 @@ Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
     : instance{instance}, work_semaphore{instance}, command_pool{instance, &work_semaphore} {
     if (threaded_recording) {
         record_chunk = AcquireChunk();
-        recorder_thread = std::jthread(std::bind_front(&Scheduler::RecorderThread, this));
+        recorder_thread = std::jthread([this](std::stop_token stop) { RecorderThread(stop); });
         recording_threaded = true;
     }
 #if TRACY_GPU_ENABLED
@@ -39,7 +39,7 @@ Scheduler::Scheduler(const Instance& instance, bool threaded_recording)
 #endif
     AllocateWorkerCommandBuffers();
     priority_pending_ops_thread =
-        std::jthread(std::bind_front(&Scheduler::PriorityPendingOpsThread, this));
+        std::jthread([this](std::stop_token stop) { PriorityPendingOpsThread(stop); });
 }
 
 Scheduler::~Scheduler() {

@@ -8,7 +8,9 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -24,9 +26,11 @@
 #include "game_install.h"
 #include "host.h"
 #include "options.h"
+#include "package_browser.h"
 #include "placement.h"
 #include "play_gate.h"
 #include "settings.h"
+#include "shift_key.h"
 #include "utf8.h"
 
 #ifndef DCP_PORT_VERSION
@@ -44,7 +48,12 @@ constexpr char kGameFilesHelp[] =
     "Select your own legally obtained Dragon's Crown Pro package (.pkg, CUSA10454, version 01.03). It is unpacked into "
     "the game folder next to the program (about 6 GB). No game files are included. Reinstalling keeps your saves and "
     "settings.";
+#ifdef _WIN32
 constexpr char kShowLauncherHelp[] = "Off starts the game directly. Hold Shift while starting to bring it back.";
+#else
+constexpr char kShowLauncherHelp[] =
+    "Off starts the game directly. Hold Shift while starting, or start the program with --launcher, to bring it back.";
+#endif
 constexpr char kWindowSizeHelp[] =
     "The game window's size in pixels in Windowed mode. The picture keeps its shape: other window shapes get black bars.";
 constexpr char kGraphicsCardHelp[] =
@@ -210,6 +219,9 @@ private:
         ImGui::BeginDisabled(play_.starting());
         const trg::Result result = launcher_->Frame();
         ImGui::EndDisabled();
+        if (const std::optional<std::filesystem::path> picked = browser_.Draw(fonts_.regular, fonts_.size, LauncherTheme())) {
+            StartInstall(Utf8(*picked));
+        }
         if (play_.starting()) {
             DrawStartingMessage();
         }
@@ -351,12 +363,31 @@ private:
         ui.EndRows();
     }
 
+    // The desktop's chooser (Windows' own, zenity or kdialog) unless there is none or DCP_FILE_CHOOSER=builtin.
+    static bool UseBuiltInChooser() {
+#ifdef _WIN32
+        return false;
+#else
+        const std::string_view preference = FileChooserPreference();
+        if (preference != "") {
+            return preference == "builtin";
+        }
+        return std::system("command -v zenity >/dev/null 2>&1 || command -v kdialog >/dev/null 2>&1") != 0;
+#endif
+    }
+
     void BrowseAndInstall() {
-        if (install_.running()) {
+        if (install_.running() || browser_.active()) {
             return;
         }
-        const std::string picked =
-            trg::BrowseForFile("Select your Dragon's Crown Pro package", {{"PS4 packages (*.pkg)", "*.pkg"}});
+        if (UseBuiltInChooser()) {
+            browser_.Open(paths_.app0.parent_path().parent_path().parent_path());
+            return;
+        }
+        StartInstall(trg::BrowseForFile("Select your Dragon's Crown Pro package", {{"PS4 packages (*.pkg)", "*.pkg"}}));
+    }
+
+    void StartInstall(const std::string& picked) {
         if (picked.empty()) {
             return;
         }
@@ -516,7 +547,7 @@ private:
     }
 
     void PageAbout(trg::Ui& ui) {
-        ui.Paragraph("Dragon's Crown Pro for PlayStation 4, running natively on Windows. No game files are included; "
+        ui.Paragraph("Dragon's Crown Pro for PlayStation 4, running natively on this PC. No game files are included; "
                      "the game runs from the user's own copy.");
         ui.Spacer(4);
         std::error_code ec;
@@ -542,6 +573,11 @@ private:
         ui.Info("Port version", DCP_PORT_VERSION);
         ui.Info("Game", "PS4 CUSA10454, Dragon's Crown Pro 1.03");
         ui.Info("Renderer", "Vulkan");
+#ifdef _WIN32
+        ui.Info("Platform", "Windows x64");
+#else
+        ui.Info("Platform", "Linux x86-64 (experimental)");
+#endif
         char libraries[96];
         std::snprintf(libraries, sizeof(libraries), "SDL %d.%d.%d  \xC2\xB7  Dear ImGui %s  \xC2\xB7  TRG Launcher %s",
                       SDL_VERSIONNUM_MAJOR(SDL_GetVersion()), SDL_VERSIONNUM_MINOR(SDL_GetVersion()),
@@ -565,6 +601,7 @@ private:
     double play_started_ = 0.0;
     std::shared_ptr<InstallResult> outcome_;
     trg::Task install_;
+    PackageBrowser browser_;
     std::string install_failure_;
     std::string install_failure_text_;
 };
@@ -579,14 +616,14 @@ extern "C" DcpLauncherResult dcp_launcher_run(const DcpLauncherConfig* config) {
     const GameCheck check = CheckAndLog(paths);
     const bool ready = check.state == GameFileState::kValid;
     const bool show_setting = settings.GetBool(kShowLauncherKey, true);
-    const bool shift = trg::ShiftHeld();
+    const bool shift = ShiftHeldAtStart() || config->force_show != 0;
     if (!LauncherWanted(ready, show_setting, shift, config->skip_once != 0)) {
         Log("skipped (show_launcher %s%s)", show_setting ? "on" : "off", config->skip_once ? ", skip requested" : "");
         return DCP_LAUNCHER_PLAY;
     }
     Log("settings file %s", Utf8(settings.file()).c_str());
     Log("opening: %s%s%s", ready ? "game ready" : "game files not ready", show_setting ? ", show_launcher on" : "",
-        shift ? ", Shift held" : "");
+        shift ? ", Shift held or --launcher" : "");
 
     LauncherApp app(*config, settings, paths, check);
     Outcome outcome = Outcome::kRunning;

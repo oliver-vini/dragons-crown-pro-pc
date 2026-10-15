@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Dragon's Crown Pro PC
+Comment=PC port of Dragon's Crown Pro (bring your own game package)
+Exec=AppRun
+Icon=dragons-crown-pro-pc
+Categories=Game;
+Terminal=false
+StartupWMClass=dcp-loader
+Actions=Launcher;
+
+[Desktop Action Launcher]
+Name=Show launcher
+Exec=AppRun --launcher

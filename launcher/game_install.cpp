@@ -1,5 +1,6 @@
 #include "game_install.h"
 
+#ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -7,11 +8,17 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#endif
 
 #include <chrono>
 #include <fstream>
+#include <optional>
 #include <thread>
 #include <vector>
+
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 #include "boot_image.h"
 #include "pkg_extract.h"
@@ -58,6 +65,24 @@ bool RenameWithRetry(const fs::path& from, const fs::path& to) {
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
     }
     return false;
+}
+
+// Hard links need both paths on one volume: the drive on Windows, the device of the nearest existing folder elsewhere.
+bool SameVolume(const fs::path& a, const fs::path& b) {
+#ifdef _WIN32
+    return a.root_name() == b.root_name();
+#else
+    const auto device = [](fs::path path) {
+        std::error_code ec;
+        while (!path.empty() && !fs::exists(path, ec)) {
+            path = path.parent_path();
+        }
+        struct stat info;
+        return !path.empty() && stat(path.c_str(), &info) == 0 ? std::optional<dev_t>(info.st_dev) : std::nullopt;
+    };
+    const auto first = device(a), second = device(b);
+    return first && second && *first == *second;
+#endif
 }
 
 // An existing folder is only replaced when it is empty or already holds what the installer writes there.
@@ -113,6 +138,9 @@ struct CopyContext {
     bool cancelled;
 };
 
+enum class Transfer { kLinked, kCopied, kCancelled, kFailed };
+
+#ifdef _WIN32
 DWORD CALLBACK CopyProgress(LARGE_INTEGER, LARGE_INTEGER transferred, LARGE_INTEGER, LARGE_INTEGER, DWORD, DWORD,
                             HANDLE, HANDLE, LPVOID data) {
     auto* context = static_cast<CopyContext*>(data);
@@ -123,6 +151,52 @@ DWORD CALLBACK CopyProgress(LARGE_INTEGER, LARGE_INTEGER transferred, LARGE_INTE
     }
     return PROGRESS_CONTINUE;
 }
+
+// A hard link, as the development preparation makes, costs no space; another drive gets a copy.
+Transfer TransferFile(const fs::path& from, const fs::path& to, CopyContext& copy, std::string& error) {
+    if (CreateHardLinkW(to.c_str(), from.c_str(), nullptr)) {
+        return Transfer::kLinked;
+    }
+    if (CopyFileExW(from.c_str(), to.c_str(), CopyProgress, &copy, nullptr, COPY_FILE_FAIL_IF_EXISTS)) {
+        return Transfer::kCopied;
+    }
+    error = "error " + std::to_string(GetLastError());
+    return copy.cancelled ? Transfer::kCancelled : Transfer::kFailed;
+}
+#else
+Transfer TransferFile(const fs::path& from, const fs::path& to, CopyContext& copy, std::string& error) {
+    std::error_code ec;
+    fs::create_hard_link(from, to, ec);
+    if (!ec) {
+        return Transfer::kLinked;
+    }
+    std::ifstream in(from, std::ios::binary);
+    std::ofstream out(to, std::ios::binary | std::ios::trunc);
+    if (!in || !out) {
+        error = "cannot open the file";
+        return Transfer::kFailed;
+    }
+    std::vector<char> block(1u << 20);
+    uint64_t transferred = 0;
+    while (in.read(block.data(), std::streamsize(block.size())).gcount() > 0) {
+        out.write(block.data(), in.gcount());
+        transferred += uint64_t(in.gcount());
+        if (!out) {
+            error = "cannot write the file";
+            return Transfer::kFailed;
+        }
+        if (copy.hooks->progress && !copy.hooks->progress(copy.done + transferred, copy.total)) {
+            copy.cancelled = true;
+            return Transfer::kCancelled;
+        }
+    }
+    if (!in.eof() || !out.flush()) {
+        error = "cannot copy the file";
+        return Transfer::kFailed;
+    }
+    return Transfer::kCopied;
+}
+#endif
 
 InstallStatus FromCheck(const GameCheck& check) {
     switch (check.state) {
@@ -380,7 +454,7 @@ InstallResult InstallFromFolder(const fs::path& source_dir, const GamePaths& tar
     }
 
     // The same drive gets hard links, which need no space.
-    if (InstallResult prepared = PrepareStaging(layout, source.root_name() != layout.app0.root_name() ? total : 0);
+    if (InstallResult prepared = PrepareStaging(layout, SameVolume(source, layout.app0) ? 0 : total);
         !prepared.ok()) {
         return prepared;
     }
@@ -395,15 +469,13 @@ InstallResult InstallFromFolder(const fs::path& source_dir, const GamePaths& tar
         if (ec) {
             return Failure(InstallStatus::kWriteFailed, "cannot create " + Utf8(to.parent_path()) + ": " + ec.message());
         }
-        // A hard link, as the development preparation makes, costs no space; another drive gets a copy.
-        if (CreateHardLinkW(to.c_str(), from.c_str(), nullptr)) {
-            ++linked;
-        } else if (!CopyFileExW(from.c_str(), to.c_str(), CopyProgress, &copy, nullptr, COPY_FILE_FAIL_IF_EXISTS)) {
-            if (copy.cancelled) {
-                return Failure(InstallStatus::kCancelled);
-            }
-            return Failure(InstallStatus::kWriteFailed,
-                           "cannot copy " + Utf8(file.relative) + " (error " + std::to_string(GetLastError()) + ")");
+        std::string error;
+        switch (TransferFile(from, to, copy, error)) {
+        case Transfer::kLinked: ++linked; break;
+        case Transfer::kCopied: break;
+        case Transfer::kCancelled: return Failure(InstallStatus::kCancelled);
+        case Transfer::kFailed:
+            return Failure(InstallStatus::kWriteFailed, "cannot copy " + Utf8(file.relative) + " (" + error + ")");
         }
         copy.done += file.size;
         if (hooks.progress && !hooks.progress(copy.done, total)) {

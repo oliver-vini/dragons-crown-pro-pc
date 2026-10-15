@@ -1,5 +1,6 @@
 // Focused tests for the launcher's logic: game file validation, the settings file, the Play gate, the window
 // placement and the Display options. They use synthetic files in a temporary folder; no window is opened.
+#ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -7,6 +8,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#endif
 
 #include <cstdio>
 #include <algorithm>
@@ -24,6 +26,7 @@
 #include "dcp_graphics.h"
 #include "dcp_png.h"
 #include "dcp_settings.h"
+#include "file_browser.h"
 #include "game_files.h"
 #include "game_install.h"
 #include "options.h"
@@ -417,9 +420,16 @@ std::string CreateLog(const fs::path& dir, const char* file = nullptr, const std
     if (!runtime_log_create(folder.c_str(), file, path, sizeof(path), &handle)) {
         return {};
     }
+#ifdef _WIN32
     DWORD written = 0;
     WriteFile(handle, text.data(), DWORD(text.size()), &written, nullptr);
     CloseHandle(handle);
+#else
+    const int fd = int(reinterpret_cast<intptr_t>(handle));
+    const ssize_t written = write(fd, text.data(), text.size());
+    (void)written;
+    close(fd);
+#endif
     return path;
 }
 
@@ -482,8 +492,8 @@ void TestLogRedirect(const fs::path& base) {
 // project's DCP_* names, and none of them can bring back an inherited setting that changes the rendering.
 void TestEnvironmentVariables() {
     const fs::path source(DCP_SOURCE_DIR);
-    // Unix/macOS branches of vendored shadPS4 code; never built for Windows.
-    const std::vector<std::string> platform = {"HOME", "XDG_DATA_HOME", "VK_DRIVER_FILES"};
+    // Unix/macOS branches of vendored shadPS4 code, and the Linux AppImage's own path and desktop session.
+    const std::vector<std::string> platform = {"HOME", "XDG_DATA_HOME", "VK_DRIVER_FILES", "APPIMAGE", "USER", "DISPLAY"};
     std::vector<std::string> names, inherited;
     int files = 0;
     for (const char* dir : {"src", "launcher", "gpu/shim", "gpu/shadps4"}) {
@@ -1156,6 +1166,45 @@ void TestOptions() {
 
 } // namespace
 
+void TestFileBrowser(const fs::path& base) {
+    const fs::path root = base / "browser";
+    fs::create_directories(root / "Zeta");
+    fs::create_directories(root / "alpha");
+    fs::create_directories(root / ".hidden");
+    for (const char* name : {"b.pkg", "A.PKG", "notes.txt", ".secret.pkg"}) {
+        std::ofstream(root / name) << "data";
+    }
+
+    FolderListing listing = ListFolder(root, ".pkg", false);
+    CHECK(listing.readable);
+    CHECK(listing.entries.size() == 4);
+    CHECK(listing.entries[0].directory && listing.entries[0].name == "alpha");  // folders first, without regard to case
+    CHECK(listing.entries[1].directory && listing.entries[1].name == "Zeta");
+    CHECK(!listing.entries[2].directory && listing.entries[2].name == "A.PKG"); // the extension matches in any case
+    CHECK(listing.entries[2].size == 4 && listing.entries[3].name == "b.pkg");
+    CHECK(ListFolder(root, "", false).entries.size() == 5);                     // every file with an empty extension
+    CHECK(ListFolder(root, ".pkg", true).entries.size() == 6);                  // hidden names on request
+    CHECK(!ListFolder(root / "missing", ".pkg", false).readable);
+    CHECK(!ListFolder(root / "b.pkg", ".pkg", false).readable);
+
+    fs::create_directories(base / "empty");
+    const std::vector<Place> places = {{"Empty", base / "empty"}, {"Packages", root}};
+    CHECK(StartingFolder(places, ".pkg") == root);                              // the first place that holds a .pkg
+    CHECK(StartingFolder({{"Empty", base / "empty"}}, ".pkg") == base / "empty");
+    CHECK(!StartingFolder({}, ".pkg").empty());
+
+    const std::vector<Place> standard = StandardPlaces(root);
+    CHECK(!standard.empty() && standard.front().path == root);
+    for (const Place& place : StandardPlaces(root / "missing")) {
+        CHECK(place.path != root / "missing");                                  // only folders that exist
+    }
+
+    CHECK(FormatSize(0) == "0 KB");
+    CHECK(FormatSize(512 * 1024) == "512 KB");
+    CHECK(FormatSize(5ull << 20) == "5.0 MB");
+    CHECK(FormatSize(6ull << 30) == "6.0 GB");
+}
+
 int main(int argc, char** argv) {
     // dcp-launcher-tests --check-game <app0> <image dir>: the readiness check on real folders, read-only.
     if (argc == 4 && std::string(argv[1]) == "--check-game") {
@@ -1209,6 +1258,7 @@ int main(int argc, char** argv) {
     TestPlayGate();
     TestPlacement();
     TestOptions();
+    TestFileBrowser(base);
 
     std::error_code ec;
     fs::remove_all(base, ec);

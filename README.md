@@ -2,11 +2,11 @@
 
 # Dragon's Crown Pro - PC Port
 
-### Dragon's Crown Pro running natively on Windows through a PS4-to-PC port and runtime, with the TRG launcher and modern PC graphics and display options
+### Dragon's Crown Pro running natively on Windows, and experimentally on Linux and Steam Deck, through a PS4-to-PC port and runtime, with the TRG launcher and modern graphics and display options
 
 [![Latest release](https://img.shields.io/github/v/release/saulob/dragons-crown-pro-pc?style=for-the-badge&label=release&color=e0bb32&labelColor=07101f&include_prereleases&cacheSeconds=300)](https://github.com/saulob/dragons-crown-pro-pc/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/saulob/dragons-crown-pro-pc/total?style=for-the-badge&color=e0bb32&labelColor=07101f&cacheSeconds=300)](https://github.com/saulob/dragons-crown-pro-pc/releases)
-![Platform](https://img.shields.io/badge/platform-Windows-00acc1?style=for-the-badge&labelColor=07101f)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20experimental%20%7C%20Steam%20Deck%20experimental-00acc1?style=for-the-badge&labelColor=07101f)
 
 <sub>The original PS4 game code runs on the PC with a replacement for the PS4 system libraries and a Vulkan renderer derived from <a href="https://github.com/shadps4-emu/shadPS4">shadPS4</a>. <b>No game files included</b>: bring your own legally obtained Dragon's Crown Pro PS4 package.</sub>
 
@@ -16,7 +16,7 @@
 
 ## Features
 
-- **Native Windows PC port**: the game's own x86-64 code runs directly on the PC. It is not an emulator.
+- **Native PC port**: the game's own x86-64 code runs directly on the PC. It is not an emulator. Windows is the primary tested platform, and there is an experimental native Linux / Steam Deck AppImage with the same intended feature set. Linux needs no Proton or Wine.
 - **TRG launcher** that installs the game directly from your own `.pkg` file, with no Python or other tools needed, and remembers its window position
 - **Windowed** and **Borderless Fullscreen**, switched with **F11** while playing, with window size and monitor selection
 - **Graphics card selection**: Automatic, or any Vulkan graphics card the renderer can use
@@ -32,7 +32,8 @@
 ## What you need
 
 - Windows 10 (version 1903 or newer) or Windows 11, 64-bit
-- A graphics card and driver with **Vulkan 1.3**, `VK_EXT_robustness2`, `VK_KHR_push_descriptor` and `VK_EXT_vertex_attribute_divisor` (tested on an NVIDIA GeForce RTX 4070 and Intel UHD Graphics 730)
+- **Or, experimental:** 64-bit Linux on x86-64, including the Steam Deck, with glibc 2.38 or newer and `libvulkan.so.1` on the system (see [Linux and Steam Deck](#linux-and-steam-deck)). It has been run on Ubuntu 24.04 only; other distributions that are new enough may work
+- A graphics card and driver with **Vulkan 1.3**, `VK_EXT_robustness2`, `VK_KHR_push_descriptor` and `VK_EXT_vertex_attribute_divisor` on either platform (tested on an NVIDIA GeForce RTX 4070 and Intel UHD Graphics 730 on Windows)
 - **Your own legally obtained Dragon's Crown Pro package**: a decrypted PS4 `.pkg` file of this exact game version, and about 6 GB of free space for the installed game:
 
 | | |
@@ -46,6 +47,8 @@
 | `eboot.bin` | SHA-256 `f9bff150c4c28507096e7e143a07492063ed89bf05ac6cb995a55a0946e3508a` |
 
 The launcher checks the Title ID, Content ID and versions in the package's `param.sfo` before it unpacks anything, and the `eboot.bin` hash before it installs the result. Any other version is refused, because the port is built for this exact game code. A package encrypted for a PS4 console cannot be unpacked on a PC.
+
+The Linux package is the same game and launcher, so the package requirements are the same.
 
 ## Installing
 
@@ -73,13 +76,28 @@ Everything is kept next to the program, so copying the whole folder to another P
 
 These folders are created the first time they are needed and are not part of the download. When updating the port, keep `user` (and `game`, to skip reinstalling).
 
+### Linux and Steam Deck
+
+**Experimental.** This is a native Linux build, not Proton or Wine, and it is intended to provide the same functionality as Windows: the same launcher, installer, display and graphics options, controls and in-game menu. "Experimental" is about testing: the maintainer has not been able to test it on a real Linux PC or Steam Deck yet. It was validated automatically under WSL2 with Ubuntu 24.04, in X11 and Wayland environments with a software Vulkan driver: the launcher, installing a package, the game's first screens, saves and the shader cache. Broader testing is still needed on AMD (RADV), NVIDIA and Intel Vulkan drivers, the Steam Deck's own controls, gamescope and Gaming Mode, performance, and long sessions. Please report Linux-specific problems with the log (see [Reporting problems](#reporting-problems)).
+
+1. Download **DragonsCrownProPC-v&lt;version&gt;-linux-x86_64.AppImage** from the [latest release](https://github.com/saulob/dragons-crown-pro-pc/releases/latest) and make it executable (right-click > **Properties** > **Permissions** > **Is executable**, or `chmod +x`).
+2. Run it. The launcher opens.
+3. On the **Play** page click **Install game...** and select your own Dragon's Crown Pro `.pkg` file, exactly as on Windows. The launcher uses the desktop's file chooser (`zenity` or `kdialog`) when there is one, and its own file chooser otherwise, which works with the mouse, the keyboard and a controller. Wait until **Ready to play** appears, then press **PLAY**.
+4. `game`, `user` and `logs` are kept next to the AppImage file when that folder is writable (in `$XDG_DATA_HOME/DragonsCrownProPC` otherwise; `DCP_PORTABLE_DIR` chooses another folder). The AppImage itself is never written to.
+
+An AppImage needs FUSE 2 to start. On a system without a working FUSE, run it as `./DragonsCrownProPC-*-linux-x86_64.AppImage --appimage-extract-and-run`.
+
+To bring the launcher back after turning **Show this launcher** off, hold **Shift** while starting (in an X11 session) or start the AppImage with `--launcher`. The AppImage's desktop entry also has a **Show launcher** action. On a Steam Deck, which has no keyboard in Gaming Mode, put `--launcher` in the shortcut's **Launch Options** for a run, then remove it.
+
+**Steam Deck:** install the game once from Desktop Mode, then add the AppImage with **Games > Add a Non-Steam Game to My Library** and start it from Gaming Mode. Nothing needs Proton. Requirements, differences from Windows and known limits are in [docs/LINUX.md](docs/LINUX.md).
+
 ### Windows SmartScreen
 
 Windows may warn the first time you run the program, because the release is not digitally signed. If you downloaded it from this repository's releases page, choose **More info**, then **Run anyway**.
 
 ## The launcher
 
-The launcher opens before the game. Your choices are saved to `user\dcp.ini`, the same file the in-game menu writes. To turn the launcher off, set **Show this launcher** to **Off** on the Play page. Hold **Shift** while starting to bring it back.
+The launcher opens before the game. Your choices are saved to `user\dcp.ini`, the same file the in-game menu writes. To turn the launcher off, set **Show this launcher** to **Off** on the Play page. Hold **Shift** while starting to bring it back (on Linux, also with `--launcher`, see [Linux and Steam Deck](#linux-and-steam-deck)). The launcher works the same on both platforms; on Linux the folder paths below use `/` instead of a backslash.
 
 ### Play
 - **Install game...** from your `.pkg` file, with the Title ID, version and `eboot.bin` checks, and **Reinstall game...**
@@ -139,6 +157,8 @@ The game runs at its own 60 frames per second.
 
 If the game does not start or crashes, please open an [issue](https://github.com/saulob/dragons-crown-pro-pc/issues). Attach the newest `dragons_crown_pro_*.log` file from the `logs` folder next to the program, and say what you were doing when the problem happened.
 
+For a Linux or Steam Deck problem, please also give your Linux distribution, your GPU and its driver (for example Mesa and RADV, or NVIDIA), and on a Steam Deck whether you were in Desktop Mode or Gaming Mode.
+
 ## Building it yourself
 
 ```powershell
@@ -148,11 +168,25 @@ git clone https://github.com/saulob/dragons-crown-pro-pc.git
 1. Install [MSYS2](https://www.msys2.org) with the CLANG64 toolchain. `.\tools\setup.ps1` checks it and prints the `pacman` command for anything missing.
 2. `.\tools\build.ps1` fetches the pinned dependencies (TRG Launcher, Dear ImGui and a few small libraries) and builds `build\cmake\clang64\bin\dcp-loader.exe`.
 3. `.\tools\build.ps1 -Run` also starts it. Install the game from the launcher's Play page, as in a release; the development build keeps it in `game\` and the boot image in `build\image\` of the repository.
-4. `.\tools\package.ps1` makes the release folder, ZIP and `.sha256` file in `dist\` from the same build: the program without debug information (the symbols stay in `dist\`), the DLLs it needs and the licences. It is local only and never uploads, tags or publishes anything. The release version is `DCP_PORT_VERSION` in `CMakeLists.txt`.
+4. `.\tools\package.ps1` makes the release folder, ZIP and `.zip.sha256` file in `dist\` from the same build: the program without debug information (the symbols stay in `dist\`), the DLLs it needs and the licences. It is local only and never uploads, tags or publishes anything. The release version is `DCP_PORT_VERSION` in `CMakeLists.txt`.
+5. `.\tools\package-release.ps1` prepares the whole release in `dist\`: that Windows ZIP, and the Linux AppImage built in WSL2 (`tools/package-release-linux.sh`, which runs `tools/package-linux.sh`), each with its `.sha256` file. It needs WSL2 with the Linux build environment prepared once (`packaging/linux/ci-deps.sh`), installs nothing, fails if either platform fails, and never uploads anything.
 
 `.\tools\test.ps1` runs the focused tests. Python is not needed to build, test or play. Only the optional development scripts in `scripts\` use it, such as the Python cross-checks of the package extractor and the boot image builder (`.\tools\setup.ps1 -InstallPython`).
 
-The technical notes are in [docs](docs): [launcher and settings](docs/LAUNCHER.md), [graphics](docs/GRAPHICS.md), [first boot](docs/FIRST_BOOT.md), [bootstrap](docs/BOOTSTRAP.md) and [references](docs/REFERENCES.md).
+### Linux
+
+```sh
+git clone https://github.com/saulob/dragons-crown-pro-pc.git
+cd dragons-crown-pro-pc
+bash packaging/linux/ci-deps.sh   # Ubuntu 24.04: toolchain, libraries, Vulkan headers, VMA and SDL3 (uses sudo)
+bash tools/build.sh               # fetches the pinned dependencies, builds build/cmake/linux/bin/dcp-loader
+bash tools/build.sh --test        # also builds and runs the focused launcher and runtime tests
+bash tools/package-linux.sh       # dist/DragonsCrownProPC-v<version>-linux-x86_64.AppImage and its .sha256
+```
+
+`tools/build.sh --run` starts the loader that was built. Python is not needed. The AppImage is built on Ubuntu 24.04, whose glibc is the oldest one it runs on; `.github/workflows/linux-appimage.yml` does the same in GitHub Actions (started by hand, publishes nothing).
+
+The technical notes are in [docs](docs): [launcher and settings](docs/LAUNCHER.md), [Linux port](docs/LINUX.md), [graphics](docs/GRAPHICS.md), [first boot](docs/FIRST_BOOT.md), [bootstrap](docs/BOOTSTRAP.md) and [references](docs/REFERENCES.md).
 
 ## Credits
 

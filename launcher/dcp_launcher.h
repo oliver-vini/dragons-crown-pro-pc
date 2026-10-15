@@ -15,6 +15,7 @@ typedef struct {
     const char *settings_file; /* NULL: <user_dir>/dcp.ini */
     const char *logs_dir;      /* NULL when unknown */
     int skip_once;             /* --dcp-skip-launcher: do not show it unless the game files are not ready */
+    int force_show;            /* --launcher: show it even when "Show this launcher" is off, like holding Shift */
 } DcpLauncherConfig;
 
 /* NULL asks for the default, which is relative to the executable (launcher/paths.h). */

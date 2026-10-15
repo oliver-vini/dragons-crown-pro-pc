@@ -91,6 +91,33 @@ void runtime_file_configure(const char *app0,const char *user) {
         runtime_file_mount(guest,path);
     }
 }
+#ifndef _WIN32
+/* The PS4 file system ignores case, Linux's does not: a path component that does not exist is replaced by the
+ * entry of its folder that differs only in case. The mount's own folder (the first `root` bytes) is exact. */
+static void match_case(char *path,size_t root) {
+    if (root && path[root-1]=='/') --root;
+    for (size_t at=root;path[at]=='/';) {
+        size_t start=at+1,end=start;
+        while (path[end] && path[end]!='/') ++end;
+        if (end==start) { at=end; continue; }
+        char saved=path[end];
+        path[end]=0;
+        struct stat info;
+        if (lstat(path,&info)) {
+            path[at]=0;
+            DIR *folder=opendir(path);
+            path[at]='/';
+            int found=0;
+            for (struct dirent *e; folder && !found && (e=readdir(folder));)
+                if (strlen(e->d_name)==end-start && !strcasecmp(e->d_name,path+start)) { memcpy(path+start,e->d_name,end-start); found=1; }
+            if (folder) closedir(folder);
+            if (!found) { path[end]=saved; return; }
+        }
+        path[end]=saved;
+        at=end;
+    }
+}
+#endif
 /* Resolve a guest path to a host path; returns 0 or a host errno. */
 static int translate(const char *guest,char *out,size_t size) {
     if (!guest || !*guest) return ENOENT;
@@ -106,10 +133,17 @@ static int translate(const char *guest,char *out,size_t size) {
         if (!strncmp(buffer,mounts[i].guest,n) && (buffer[n]=='/' || !buffer[n]) && n>best) { best=n; m=&mounts[i]; }
     }
     int result=0;
+    size_t root=0;
     if (!m) result=ENOENT;
     else if ((size_t)snprintf(out,size,"%s%s",m->host,buffer+best)>=size) result=ENAMETOOLONG;
+    else root=strlen(m->host);
     pthread_mutex_unlock(&lock);
     if (result==ENOENT) fprintf(stderr,"Runtime: no mount for guest path %s\n",guest);
+#ifndef _WIN32
+    if (!result) match_case(out,root);
+#else
+    (void)root;
+#endif
     return result;
 }
 static int host_flags(int flags) {
